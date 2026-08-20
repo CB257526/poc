@@ -1,234 +1,183 @@
-"""命令行入口"""
+"""命令行入口 - 新版本"""
 
 import sys
 import argparse
-from pathlib import Path
-from workflow.runtime import WorkflowRuntime
-from workflow.config import config
-from workflow.services import setup_logging, get_logger
 import json
+from pathlib import Path
+from datetime import datetime
+
+from workflow.workflow_new import run_workflow
+from workflow.services import get_logger
+
+logger = get_logger()
 
 
 def main():
-    """命令行主入口"""
+    """命令行入口"""
     parser = argparse.ArgumentParser(
-        description="约稿费用验收工作流",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-示例:
-  # 运行工作流
-  python -m workflow run --input /path/to/1-链接.xlsx
-
-  # 启动MCP服务器
-  python -m workflow serve
-
-  # 查询运行状态
-  python -m workflow status <run_id>
-        """
+        description="约稿费用验收工作流 - 基于 LangChain"
     )
 
-    subparsers = parser.add_subparsers(dest="command", help="子命令")
+    subparsers = parser.add_subparsers(dest="command", help="命令")
 
-    # === run 命令 ===
+    # run 命令
     run_parser = subparsers.add_parser("run", help="运行工作流")
     run_parser.add_argument(
         "--input",
         "-i",
         required=True,
-        help="输入文件路径（表1-链接.xlsx）"
+        help="输入文件路径（1-链接.xlsx）"
     )
     run_parser.add_argument(
         "--table-dir",
         "-t",
-        help="表格目录，默认使用配置中的路径"
+        default="./table",
+        help="参考表格目录（默认: ./table）"
     )
     run_parser.add_argument(
         "--output",
         "-o",
-        choices=["json", "summary"],
-        default="summary",
-        help="输出格式"
+        choices=["text", "json"],
+        default="text",
+        help="输出格式（默认: text）"
     )
-
-    # === serve 命令 ===
-    serve_parser = subparsers.add_parser("serve", help="启动MCP服务器")
-    serve_parser.add_argument(
-        "--host",
-        default=None,
-        help="服务器地址"
-    )
-    serve_parser.add_argument(
-        "--port",
-        type=int,
-        default=None,
-        help="服务器端口"
-    )
-
-    # === status 命令 ===
-    status_parser = subparsers.add_parser("status", help="查询运行状态")
-    status_parser.add_argument("run_id", help="运行ID")
 
     args = parser.parse_args()
 
-    if not args.command:
+    if args.command == "run":
+        run_command(args)
+    else:
         parser.print_help()
         sys.exit(1)
 
-    # 初始化日志
-    setup_logging(
-        level=config.get("logging.level", "INFO"),
-        format_type="console" if args.command == "run" else config.get("logging.format", "json"),
-        output=config.get("logging.output", "both"),
-        logs_dir=config.get_logs_dir()
+
+def run_command(args):
+    """执行 run 命令"""
+    input_file = Path(args.input).resolve()
+    table_dir = Path(args.table_dir).resolve()
+
+    logger.info(
+        "starting_workflow_from_cli",
+        input_file=str(input_file),
+        table_dir=str(table_dir)
     )
 
-    logger = get_logger()
+    try:
+        # 运行工作流
+        context = run_workflow(
+            input_file=str(input_file),
+            table_dir=str(table_dir)
+        )
 
-    # === 执行命令 ===
-    if args.command == "run":
-        run_workflow(args, logger)
-    elif args.command == "serve":
-        serve_mcp(args, logger)
-    elif args.command == "status":
-        query_status(args, logger)
+        # 输出结果
+        if args.output == "json":
+            print_json_output(context)
+        else:
+            print_text_output(context)
 
+        # 根据结果设置退出码
+        if context.has_critical_errors():
+            sys.exit(1)
+        else:
+            sys.exit(0)
 
-def run_workflow(args, logger):
-    """运行工作流"""
-    logger.info("command_run_started", input_file=args.input)
-
-    # 检查输入文件
-    if not Path(args.input).exists():
-        logger.error("input_file_not_found", path=args.input)
-        print(f"错误: 输入文件不存在: {args.input}")
+    except Exception as e:
+        logger.error("workflow_failed_in_cli", error=str(e), exc_info=True)
+        print(f"❌ 工作流执行失败: {str(e)}", file=sys.stderr)
         sys.exit(1)
 
-    # 创建运行时
-    runtime = WorkflowRuntime()
 
-    # 启动工作流
-    print(f"🚀 启动工作流...")
-    print(f"   输入文件: {args.input}")
-    if args.table_dir:
-        print(f"   表格目录: {args.table_dir}")
+def print_text_output(context):
+    """打印文本格式输出"""
+    print("\n" + "="*60)
+    print(f"📊 工作流执行报告")
+    print("="*60)
 
-    result = runtime.start_workflow(
-        input_file=args.input,
-        table_dir=args.table_dir
-    )
+    print(f"\n✅ 运行ID: {context.run_id}")
+    print(f"⏱️  开始时间: {context.run_started_at.strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"📝 完成节点: {len(context.completed_nodes)}/{2}")  # 目前只有2个节点
+    print(f"   {', '.join(context.completed_nodes)}")
 
-    # 输出结果
-    if args.output == "json":
-        # JSON格式输出
-        print(json.dumps(result, ensure_ascii=False, indent=2))
-    else:
-        # 摘要格式输出
-        print_summary(result, runtime)
+    print(f"\n📊 数据统计:")
+    print(f"   - 记录数: {len(context.records)}")
 
-
-def print_summary(result, runtime: WorkflowRuntime):
-    """打印执行摘要"""
-    run_id = result["run_id"]
-    status = result["status"]
-
-    print(f"\n{'='*60}")
-    print(f"运行ID: {run_id}")
-    print(f"状态: {status}")
-    print(f"{'='*60}\n")
-
-    if status == "failed":
-        print(f"❌ 工作流执行失败")
-        print(f"   错误: {result.get('error')}")
-        return
-
-    # 获取完整状态
-    state = result.get("state")
-    if not state:
-        return
-
-    # 节点状态
-    node_statuses = state.get("node_statuses", {})
-    if node_statuses:
-        print("📊 节点状态:")
-        for node_id, node_status in node_statuses.items():
-            status_icon = {
-                "completed": "✅",
-                "running": "🔄",
-                "failed": "❌",
-                "pending": "⏳"
-            }.get(node_status.get("status"), "❓")
-
-            duration = node_status.get("duration_ms")
-            duration_str = f"{duration:.0f}ms" if duration else "-"
-
-            print(f"   {status_icon} {node_status.get('node_name')} ({node_id})")
-            print(f"      状态: {node_status.get('status')} | 耗时: {duration_str}")
-
-    print()
+    if context.quote_details:
+        print(f"   - 约稿明细: ✅")
+    if context.monthly_summary:
+        print(f"   - 月度汇总: ✅")
+    if context.payment_rows:
+        print(f"   - 付款表: ✅ ({len(context.payment_rows)}行)")
 
     # 问题统计
-    issues = state.get("issues", [])
-    if issues:
-        errors = [i for i in issues if i.get("level") == "error"]
-        warnings = [i for i in issues if i.get("level") == "warning"]
+    print(f"\n⚠️  问题统计:")
+    critical_count = len(context.get_issues_by_level("critical"))
+    error_count = len(context.get_issues_by_level("error"))
+    warning_count = len(context.get_issues_by_level("warning"))
 
-        print(f"⚠️  问题汇总: {len(issues)} 个问题")
-        if errors:
-            print(f"   ❌ 错误: {len(errors)} 个")
-            for issue in errors[:3]:  # 只显示前3个
-                print(f"      - {issue.get('message')}")
-            if len(errors) > 3:
-                print(f"      ... 还有 {len(errors) - 3} 个错误")
+    print(f"   - Critical: {critical_count}")
+    print(f"   - Error: {error_count}")
+    print(f"   - Warning: {warning_count}")
 
-        if warnings:
-            print(f"   ⚠️  警告: {len(warnings)} 个")
-            for issue in warnings[:3]:  # 只显示前3个
-                print(f"      - {issue.get('message')}")
-            if len(warnings) > 3:
-                print(f"      ... 还有 {len(warnings) - 3} 个警告")
+    # 显示前5个问题
+    if context.issues:
+        print(f"\n📋 问题详情（前5条）:")
+        for i, issue in enumerate(context.issues[:5], 1):
+            icon = "🔴" if issue.level == "critical" else "🟠" if issue.level == "error" else "🟡"
+            print(f"   {i}. {icon} [{issue.level.upper()}] {issue.message}")
+            print(f"      节点: {issue.node_id}, 代码: {issue.code}")
+
+        if len(context.issues) > 5:
+            print(f"   ... 还有 {len(context.issues) - 5} 个问题")
+
+    # 产物
+    if context.output_files:
+        print(f"\n📦 输出文件:")
+        for name, path in context.output_files.items():
+            print(f"   - {name}: {path}")
+
+    print("\n" + "="*60)
+
+    # 最终状态
+    if context.has_critical_errors():
+        print("❌ 工作流因严重错误终止")
+    elif error_count > 0:
+        print("⚠️  工作流完成，但有错误")
+    elif warning_count > 0:
+        print("✅ 工作流完成，有警告")
     else:
-        print("✅ 没有问题")
+        print("✅ 工作流成功完成")
 
-    print()
-
-    # 处理结果
-    records = state.get("records", [])
-    if records:
-        print(f"📄 处理结果:")
-        print(f"   共处理 {len(records)} 条记录")
-
-    print(f"\n{'='*60}")
-    print(f"✨ 工作流执行完成!")
-    print(f"{'='*60}\n")
+    print("="*60 + "\n")
 
 
-def serve_mcp(args, logger):
-    """启动MCP服务器"""
-    from workflow.mcp_server import start_server
-    import workflow.mcp_server as mcp_module
+def print_json_output(context):
+    """打印JSON格式输出"""
+    output = {
+        "run_id": context.run_id,
+        "run_started_at": context.run_started_at.isoformat(),
+        "completed_nodes": context.completed_nodes,
+        "records_count": len(context.records),
+        "issues": [
+            {
+                "level": issue.level,
+                "code": issue.code,
+                "message": issue.message,
+                "node_id": issue.node_id,
+                "record_id": issue.record_id,
+                "details": issue.details
+            }
+            for issue in context.issues
+        ],
+        "issue_counts": {
+            "critical": len(context.get_issues_by_level("critical")),
+            "error": len(context.get_issues_by_level("error")),
+            "warning": len(context.get_issues_by_level("warning"))
+        },
+        "output_files": context.output_files,
+        "has_critical_errors": context.has_critical_errors()
+    }
 
-    # 覆盖配置
-    if args.host:
-        config._config["api"]["host"] = args.host
-    if args.port:
-        config._config["api"]["port"] = args.port
-
-    logger.info("command_serve_started")
-    start_server()
-
-
-def query_status(args, logger):
-    """查询运行状态"""
-    logger.info("command_status_started", run_id=args.run_id)
-
-    runtime = WorkflowRuntime()
-    status = runtime.get_run_status(args.run_id)
-
-    if not status:
-        print(f"错误: 运行 {args.run_id} 不存在")
-        sys.exit(1)
-
-    print(json.dumps(status, ensure_ascii=False, indent=2))
+    print(json.dumps(output, ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":

@@ -4,10 +4,10 @@ import time
 from datetime import datetime
 from langchain_core.runnables import RunnableSequence
 
-from workflow.models_new import WorkflowContext
-from workflow.nodes.base_new import WorkflowTerminated
-from workflow.nodes.node_00_input_new import Node00Input
-from workflow.nodes.node_01_fill_basic_new import Node01FillBasic
+from workflow.models import WorkflowContext
+from workflow.nodes.base import WorkflowTerminated
+from workflow.nodes.node_00_input import Node00Input
+from workflow.nodes.node_01_fill_basic import Node01FillBasic
 from workflow.services import get_logger
 
 logger = get_logger()

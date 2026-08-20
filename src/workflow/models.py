@@ -1,175 +1,160 @@
-"""数据模型定义
+"""新的数据模型 - 基于 Pydantic"""
 
-使用TypedDict定义工作流状态和数据结构，避免Pydantic的序列化开销
-"""
-
-from typing import TypedDict, List, Dict, Any, Optional, Literal, Annotated
-import operator
+from pydantic import BaseModel, Field
+from typing import List, Dict, Any, Optional
+from datetime import datetime
 
 
-# === 节点状态 ===
-
-NodeStatusType = Literal["pending", "running", "completed", "failed", "skipped"]
-
-
-class NodeStatus(TypedDict, total=False):
-    """节点执行状态"""
-    node_id: str
-    node_name: str
-    status: NodeStatusType
-    started_at: Optional[str]
-    completed_at: Optional[str]
-    duration_ms: Optional[float]
-    error: Optional[str]
-    metrics: Dict[str, Any]
+class Issue(BaseModel):
+    """问题记录"""
+    level: str = Field(..., description="warning, error, critical")
+    code: str = Field(..., description="问题代码")
+    message: str = Field(..., description="问题描述")
+    node_id: str = Field(..., description="产生问题的节点ID")
+    record_id: Optional[str] = Field(None, description="关联的记录ID")
+    details: Dict[str, Any] = Field(default_factory=dict, description="额外细节")
 
 
-# === 节点输出 ===
-
-class NodeOutput(TypedDict, total=False):
-    """节点执行输出的标准格式"""
-    success: bool
-    node_id: str
-    node_name: str
-    data: Dict[str, Any]
-    issues: List[Dict[str, Any]]
-    metrics: Dict[str, Any]
-    error: Optional[str]
+class NodeMetrics(BaseModel):
+    """节点执行指标"""
+    processed_count: int = Field(0, description="处理的记录数")
+    success_count: int = Field(0, description="成功的记录数")
+    error_count: int = Field(0, description="失败的记录数")
+    duration_ms: float = Field(0, description="执行耗时（毫秒）")
 
 
-# === 业务数据模型 ===
-
-class SyncLink(TypedDict):
-    """同步平台链接"""
-    url: str
-    platform: str
-    raw_text: str
-
-
-class QuoteRecord(TypedDict, total=False):
-    """约稿记录"""
-    # 基础标识
-    record_id: str
-    media_name: str
-    topic: Optional[str]
-    
-    # 链接信息 (节点1填写)
-    primary_link: Optional[str]
-    primary_platform: Optional[str]
-    sync_links: List[SyncLink]
-    
-    # 发布信息 (节点2填写)
-    publish_form: Optional[str]      # 发布形式：图文/视频
-    quote_type: Optional[str]        # 约稿类型
-    platform: Optional[str]          # 平台
-    title: Optional[str]             # 标题
-    screenshot: Optional[str]        # 作品截图路径
-    publish_date: Optional[str]      # 发布日期
-    quote_count: Optional[int]       # 约稿数量
-    
-    # 媒体信息 (节点3填写)
-    media_level: Optional[str]       # 媒体级别
-    fans_count: Optional[int]        # 粉丝量
-    
-    # 账户信息 (节点4填写)
-    account_name: Optional[str]      # 户名
-    id_card: Optional[str]           # 身份证
-    account_number: Optional[str]    # 账号
-    phone: Optional[str]             # 电话
-    bank: Optional[str]              # 开户行
-    bank_city: Optional[str]         # 开户行所在城市
-    
-    # 费用信息 (节点5填写)
-    base_amount: Optional[float]     # 基础金额
-    total_amount: Optional[float]    # 合计金额
-    fee_detail_id: Optional[str]     # 费用明细ID
-    
-    # 元数据
-    source_row: int                  # 来源行号
-    is_duplicate: bool               # 是否重复
-
-
-class QuoteDetail(TypedDict):
-    """约稿费用明细表记录"""
-    detail_id: str
-    media_name: str
-    platform: str
-    quote_type: str
-    title: str
-    publish_date: str
-    base_amount: float
-    bonus_amount: float
-    total_amount: float
-
-
-class MonthlySummary(TypedDict):
-    """月度汇总记录"""
-    month: str
-    media_name: str
-    total_count: int
-    total_amount: float
-    details: List[str]  # detail_id列表
-
-
-class PaymentRow(TypedDict):
-    """付款表记录"""
-    account_name: str
-    id_card: str
-    account_number: str
-    phone: str
-    bank: str
-    bank_city: str
-    amount: float
-    month: str
-
-
-# === 问题记录 ===
-
-class Issue(TypedDict, total=False):
-    """问题/警告记录"""
-    level: Literal["warning", "error"]
-    code: str
-    message: str
-    node_id: str
-    record_id: Optional[str]
-    field: Optional[str]
-    details: Dict[str, Any]
-
-
-# === 工作流状态 ===
-
-class WorkflowState(TypedDict):
+class WorkflowContext(BaseModel):
     """
-    工作流全局状态
-    
-    使用Annotated + operator.add实现自动累积：
-    - issues: 每个节点产生的问题自动追加
-    - records: 每个节点更新的记录自动合并
+    工作流上下文 - 贯穿整个流程的数据载体
+
+    设计原则：
+    - 使用 Pydantic 而不是 TypedDict，提供更好的类型检查和验证
+    - 节点间直接传递 context 对象，而不是全局 state 字典
+    - 数据更新通过 Pydantic 的字段赋值，而不是字典合并
     """
-    # 运行元数据
-    run_id: str
-    run_started_at: str
-    config: Dict[str, Any]
-    
-    # 输入输出
-    input_file: str
-    table_paths: Dict[str, str]
-    table_metadata: Dict[str, Any]
-    
-    # 业务数据 - 使用Annotated + operator.add实现自动累积
-    records: Annotated[List[QuoteRecord], operator.add]
-    quote_details: Optional[List[QuoteDetail]]
-    monthly_summary: Optional[List[MonthlySummary]]
-    payment_rows: Optional[List[PaymentRow]]
-    
-    # 产物
-    output_files: Dict[str, str]
-    
-    # 问题收集 - 使用Annotated + operator.add实现自动累积
-    issues: Annotated[List[Issue], operator.add]
-    
-    # 节点状态
-    node_statuses: Dict[str, NodeStatus]
-    
-    # 全局指标
-    metrics: Dict[str, Any]
+
+    # === 元信息 ===
+    run_id: str = Field(..., description="运行ID")
+    run_started_at: datetime = Field(default_factory=datetime.now, description="开始时间")
+
+    # === 输入 ===
+    input_file: str = Field(..., description="输入文件路径")
+    table_dir: str = Field(default="./table", description="表格目录")
+
+    # === 配置（可选）===
+    config: Dict[str, Any] = Field(default_factory=dict, description="运行时配置")
+
+    # === 业务数据 ===
+    records: List[Dict[str, Any]] = Field(default_factory=list, description="记录列表")
+    quote_details: Optional[Dict[str, Any]] = Field(None, description="约稿明细")
+    monthly_summary: Optional[Dict[str, Any]] = Field(None, description="月度汇总")
+    payment_rows: Optional[List[Dict[str, Any]]] = Field(None, description="付款表行")
+
+    # === 追踪信息 ===
+    issues: List[Issue] = Field(default_factory=list, description="问题列表")
+    current_node: Optional[str] = Field(None, description="当前执行的节点")
+    completed_nodes: List[str] = Field(default_factory=list, description="已完成的节点")
+
+    # === 产物 ===
+    output_files: Dict[str, str] = Field(default_factory=dict, description="输出文件映射")
+
+    # === 表格路径缓存 ===
+    table_paths_cache: Dict[str, str] = Field(default_factory=dict, description="表格路径缓存", exclude=True)
+
+    model_config = {"arbitrary_types_allowed": True}
+
+    def get_table_path(self, table_name: str) -> str:
+        """
+        获取表格路径（带缓存）
+
+        Args:
+            table_name: 表格名称，如 "3-媒体库"
+
+        Returns:
+            表格文件的绝对路径
+        """
+        if table_name not in self.table_paths_cache:
+            import os
+            # 查找表格文件
+            for ext in ['.xlsx', '.xls']:
+                path = os.path.join(self.table_dir, f"{table_name}{ext}")
+                if os.path.exists(path):
+                    self.table_paths_cache[table_name] = path
+                    break
+            else:
+                raise FileNotFoundError(f"表格 {table_name} 不存在于 {self.table_dir}")
+
+        return self.table_paths_cache[table_name]
+
+    def has_critical_errors(self) -> bool:
+        """检查是否有严重错误"""
+        return any(issue.level == "critical" for issue in self.issues)
+
+    def get_issues_by_level(self, level: str) -> List[Issue]:
+        """按级别获取问题"""
+        return [issue for issue in self.issues if issue.level == level]
+
+    def add_issue(
+        self,
+        level: str,
+        code: str,
+        message: str,
+        node_id: str,
+        record_id: Optional[str] = None,
+        details: Optional[Dict[str, Any]] = None
+    ):
+        """便捷方法：添加问题"""
+        self.issues.append(Issue(
+            level=level,
+            code=code,
+            message=message,
+            node_id=node_id,
+            record_id=record_id,
+            details=details or {}
+        ))
+
+
+class NodeOutput(BaseModel):
+    """
+    节点输出
+
+    节点执行后返回此对象，包含：
+    - 是否成功
+    - 产生的问题
+    - 执行指标
+    - 需要更新到 context 的数据
+    """
+    success: bool = Field(..., description="是否成功")
+    issues: List[Issue] = Field(default_factory=list, description="问题列表")
+    metrics: NodeMetrics = Field(default_factory=NodeMetrics, description="执行指标")
+    data: Dict[str, Any] = Field(default_factory=dict, description="更新到 context 的数据")
+
+    @classmethod
+    def create_success(
+        cls,
+        metrics: NodeMetrics,
+        data: Optional[Dict[str, Any]] = None,
+        issues: Optional[List[Issue]] = None
+    ) -> "NodeOutput":
+        """创建成功输出"""
+        return cls(
+            success=True,
+            metrics=metrics,
+            data=data or {},
+            issues=issues or []
+        )
+
+    @classmethod
+    def create_failure(
+        cls,
+        metrics: NodeMetrics,
+        issues: List[Issue],
+        data: Optional[Dict[str, Any]] = None
+    ) -> "NodeOutput":
+        """创建失败输出"""
+        return cls(
+            success=False,
+            metrics=metrics,
+            issues=issues,
+            data=data or {}
+        )

@@ -1,30 +1,23 @@
-"""节点1: 填写约稿资料基础信息
-
-职责：
-1. 读取表1（1-链接.xlsx）
-2. 解析媒体名称和链接（处理媒体名称继承逻辑）
-3. 从链接中提取URL，识别平台
-4. 区分主发布链接和同步平台链接
-5. 去重检查
-"""
+"""节点1: 填写约稿资料基础信息 - 新版本"""
 
 import re
 import uuid
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Dict, Any, List, Tuple
 from urllib.parse import urlparse
+
 from workflow.nodes.base import BaseNode
-from workflow.models import WorkflowState, NodeOutput
-from workflow.services import ExcelService, IssueCollector, get_logger
+from workflow.models import WorkflowContext, NodeOutput, Issue
+from workflow.services import get_logger
 
 logger = get_logger()
 
 
-# 平台域名映射表
+# 平台域名映射表（按优先级排序，更具体的在前面）
 PLATFORM_DOMAINS = {
+    "mp.weixin.qq.com": "微信公众号",  # 更具体的在前
+    "weixin.qq.com": "微信视频号",     # 更通用的在后
     "zhihu.com": "知乎",
     "weibo.com": "微博",
-    "weixin.qq.com": "微信视频号",
-    "mp.weixin.qq.com": "微信公众号",
     "bilibili.com": "B站",
     "douyin.com": "抖音",
     "xiaohongshu.com": "小红书",
@@ -50,155 +43,121 @@ PLATFORM_PRIORITY = {
 
 
 class Node01FillBasic(BaseNode):
-    """节点1 - 填写约稿资料基础信息"""
+    """
+    节点1: 填写约稿资料基础信息
+
+    职责：
+    1. 解析链接，处理媒体名称继承逻辑
+    2. 从链接中提取URL，识别平台
+    3. 区分主发布链接和同步平台链接
+    4. 去重检查
+    """
 
     def __init__(self):
         super().__init__("node_01", "填写约稿资料基础信息")
 
-    def execute(self, state: WorkflowState) -> NodeOutput:
-        """执行节点逻辑"""
-        issue_collector = IssueCollector()
-        excel_service = ExcelService()
+    def process(self, context: WorkflowContext) -> NodeOutput:
+        """
+        执行节点逻辑
 
-        # 获取表1路径
-        table1_path = self._get_table_path(state, "1-链接")
+        Args:
+            context: 工作流上下文
 
-        logger.info("reading_table1", path=table1_path)
+        Returns:
+            NodeOutput，包含解析后的记录
+        """
+        # 从 context 读取记录（由节点0创建）
+        raw_records = context.records
+        if not raw_records:
+            return self._create_success_output(
+                processed_count=0,
+                success_count=0,
+                data={},
+                issues=[]
+            )
 
-        # === 1. 读取表1 ===
-        try:
-            rows = excel_service.read_sheet_as_dicts(table1_path, sheet_name="Sheet1")
-        except Exception as e:
-            raise ValueError(f"读取表1失败: {str(e)}")
+        issues = []
+        processed_count = len(raw_records)
 
-        if not rows:
-            raise ValueError("表1没有数据")
+        logger.info("processing_records", count=processed_count)
 
-        logger.info("table1_read", rows=len(rows))
+        # === 1. 解析每条记录中的链接 ===
+        parsed_records = []
+        for record in raw_records:
+            url = record.get("链接")
+            if not url:
+                continue
 
-        # === 2. 解析链接，处理媒体名称继承 ===
-        records = self._parse_links(rows, issue_collector)
+            # 提取URL
+            urls = self._extract_urls_from_text(str(url))
 
-        logger.info("links_parsed", records=len(records))
+            if not urls:
+                issues.append(Issue(
+                    level="warning",
+                    code="NO_URL_FOUND",
+                    message=f"无法从文本中提取URL: {url}",
+                    node_id=self.node_id,
+                    record_id=record.get("id")
+                ))
+                continue
 
-        # === 3. 识别平台 ===
-        records = self._identify_platforms(records, issue_collector)
+            # 为每个URL创建一条记录
+            for link_text, extracted_url in urls:
+                parsed_record = {
+                    **record,  # 继承原始数据
+                    "raw_link_text": link_text,
+                    "url": extracted_url,
+                    "platform": None,  # 下一步填充
+                }
+                parsed_records.append(parsed_record)
 
-        # === 4. 区分主发布链接和同步链接 ===
-        records = self._classify_primary_and_sync(records, issue_collector)
+        logger.info("urls_extracted", total_urls=len(parsed_records))
 
-        # === 5. 去重检查 ===
-        records = self._check_duplicates(records, issue_collector)
+        # === 2. 识别平台 ===
+        for record in parsed_records:
+            url = record.get("url")
+            if url:
+                platform = self._identify_platform(url)
+                record["platform"] = platform
 
-        # === 6. 更新状态 ===
-        state["records"] = records
+                if platform == "unknown":
+                    issues.append(Issue(
+                        level="warning",
+                        code="UNKNOWN_PLATFORM",
+                        message=f"无法识别平台: {url}",
+                        node_id=self.node_id,
+                        record_id=record.get("id")
+                    ))
 
-        # === 7. 生成输出 ===
-        metrics = {
-            "total_rows_read": len(rows),
-            "records_created": len(records),
-            "platforms_identified": len(set(r.get("primary_platform") for r in records if r.get("primary_platform"))),
-            "duplicates_found": sum(1 for r in records if r.get("is_duplicate", False))
-        }
+        # === 3. 按媒体分组，区分主链接和同步链接 ===
+        final_records = self._group_by_media(parsed_records)
 
+        logger.info("records_grouped", final_count=len(final_records))
+
+        # === 4. 去重检查 ===
+        final_records = self._check_duplicates(final_records, issues)
+
+        success_count = len(final_records)
+
+        # === 5. 返回结果 ===
         return self._create_success_output(
-            data={"records": records},
-            processed_count=len(rows),
-            success_count=len(records),
-            issues=issue_collector.get_issues(),
-            metrics=metrics
+            processed_count=processed_count,
+            success_count=success_count,
+            data={"records": final_records},
+            issues=issues
         )
-
-    def _parse_links(
-        self,
-        rows: List[Dict[str, Any]],
-        issue_collector: IssueCollector
-    ) -> List[Dict[str, Any]]:
-        """
-        解析链接，处理媒体名称继承逻辑
-
-        表1的格式：
-        - A列：媒体名称（只在第一行出现，后续行需要继承）或"主题X"
-        - B列：链接（可能包含平台前缀，可能有多个链接用换行分隔）
-        """
-        records = []
-        current_media = None
-        current_topic = None
-        row_index = 0
-
-        for row in rows:
-            row_index += 1
-
-            col_a = row.get(list(row.keys())[0])  # A列
-            col_b = row.get(list(row.keys())[1]) if len(row.keys()) > 1 else None  # B列
-
-            # 处理A列（媒体名称或主题）
-            if col_a and str(col_a).strip():
-                col_a_clean = str(col_a).strip()
-
-                # 判断是否是主题标记
-                if col_a_clean.startswith("主题"):
-                    current_topic = col_a_clean
-                    logger.debug("topic_detected", topic=current_topic, row=row_index)
-                    continue
-                else:
-                    # 这是新的媒体名称
-                    current_media = col_a_clean
-                    logger.debug("media_detected", media=current_media, row=row_index)
-
-            # 处理B列（链接）
-            if col_b and str(col_b).strip():
-                if not current_media:
-                    issue_collector.add_warning(
-                        code="NO_MEDIA_CONTEXT",
-                        message=f"第{row_index}行有链接但没有媒体上下文",
-                        node_id=self.node_id,
-                        details={"row": row_index, "content": col_b}
-                    )
-                    continue
-
-                # 提取链接（可能有多个，用换行分隔）
-                links = self._extract_urls_from_text(str(col_b))
-
-                if not links:
-                    issue_collector.add_warning(
-                        code="NO_URL_FOUND",
-                        message=f"第{row_index}行无法提取URL",
-                        node_id=self.node_id,
-                        details={"row": row_index, "content": col_b}
-                    )
-                    continue
-
-                # 为每个链接创建一条记录
-                for link_text, url in links:
-                    record_id = f"rec_{uuid.uuid4().hex[:8]}"
-
-                    record = {
-                        "record_id": record_id,
-                        "media_name": current_media,
-                        "topic": current_topic,
-                        "raw_text": link_text,
-                        "url": url,
-                        "source_row": row_index,
-                        "primary_link": None,  # 后续步骤填充
-                        "primary_platform": None,  # 后续步骤填充
-                        "sync_links": [],  # 后续步骤填充
-                    }
-
-                    records.append(record)
-
-        logger.info("links_parsed", total_links=len(records))
-        return records
 
     def _extract_urls_from_text(self, text: str) -> List[Tuple[str, str]]:
         """
         从文本中提取URL
 
-        返回 [(原始文本, 提取的URL), ...]
-        """
-        # URL正则表达式
-        url_pattern = r'https?://[^\s一-龥]+'
+        Args:
+            text: 原始文本
 
+        Returns:
+            [(原始文本行, 提取的URL), ...]
+        """
+        url_pattern = r'https?://[^\s一-龥]+'
         results = []
 
         # 按行分割（处理多个链接的情况）
@@ -221,85 +180,68 @@ class Node01FillBasic(BaseNode):
 
         return results
 
-    def _identify_platforms(
-        self,
-        records: List[Dict[str, Any]],
-        issue_collector: IssueCollector
-    ) -> List[Dict[str, Any]]:
-        """识别平台"""
+    def _identify_platform(self, url: str) -> str:
+        """
+        识别平台
+
+        Args:
+            url: URL
+
+        Returns:
+            平台名称，如 "知乎"、"微博"，未识别返回 "unknown"
+        """
+        try:
+            parsed = urlparse(url)
+            domain = parsed.netloc.lower()
+
+            # 移除 www. 前缀
+            if domain.startswith("www."):
+                domain = domain[4:]
+
+            # 匹配平台
+            for domain_pattern, platform_name in PLATFORM_DOMAINS.items():
+                if domain_pattern in domain:
+                    return platform_name
+
+            return "unknown"
+
+        except Exception as e:
+            logger.warning("url_parse_failed", url=url, error=str(e))
+            return "unknown"
+
+    def _group_by_media(self, records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        按媒体分组，区分主链接和同步链接
+
+        策略：
+        - 如果一个记录ID对应多个URL，按平台优先级选择主链接
+        - 其他链接作为同步链接
+
+        Args:
+            records: 解析后的记录列表
+
+        Returns:
+            合并后的记录列表
+        """
+        # 按记录ID分组
+        groups: Dict[str, List[Dict[str, Any]]] = {}
         for record in records:
-            url = record.get("url")
-            if not url:
+            record_id = record.get("id")
+            if not record_id:
                 continue
 
-            try:
-                parsed = urlparse(url)
-                domain = parsed.netloc.lower()
+            if record_id not in groups:
+                groups[record_id] = []
 
-                # 移除 www. 前缀
-                if domain.startswith("www."):
-                    domain = domain[4:]
+            groups[record_id].append(record)
 
-                # 匹配平台
-                platform = None
-                for domain_pattern, platform_name in PLATFORM_DOMAINS.items():
-                    if domain_pattern in domain:
-                        platform = platform_name
-                        break
-
-                if platform:
-                    record["platform"] = platform
-                else:
-                    record["platform"] = "unknown"
-                    issue_collector.add_warning(
-                        code="UNKNOWN_PLATFORM",
-                        message=f"无法识别平台: {domain}",
-                        node_id=self.node_id,
-                        record_id=record["record_id"],
-                        details={"url": url, "domain": domain}
-                    )
-
-            except Exception as e:
-                issue_collector.add_warning(
-                    code="URL_PARSE_FAILED",
-                    message=f"URL解析失败: {str(e)}",
-                    node_id=self.node_id,
-                    record_id=record["record_id"],
-                    details={"url": url}
-                )
-                record["platform"] = "unknown"
-
-        return records
-
-    def _classify_primary_and_sync(
-        self,
-        records: List[Dict[str, Any]],
-        issue_collector: IssueCollector
-    ) -> List[Dict[str, Any]]:
-        """
-        区分主发布链接和同步链接
-
-        策略：按媒体分组，每个媒体选择优先级最高的平台作为主平台
-        """
-        # 按媒体分组
-        media_groups: Dict[str, List[Dict[str, Any]]] = {}
-        for record in records:
-            media_name = record.get("media_name")
-            if not media_name:
-                continue
-
-            if media_name not in media_groups:
-                media_groups[media_name] = []
-
-            media_groups[media_name].append(record)
-
-        # 为每个媒体组选择主链接
+        # 合并每组
         result_records = []
 
-        for media_name, group_records in media_groups.items():
-            if len(group_records) == 1:
+        for record_id, group in groups.items():
+            if len(group) == 1:
                 # 只有一个链接，直接作为主链接
-                record = group_records[0]
+                record = group[0]
                 record["primary_link"] = record["url"]
                 record["primary_platform"] = record["platform"]
                 record["sync_links"] = []
@@ -307,42 +249,38 @@ class Node01FillBasic(BaseNode):
 
             else:
                 # 多个链接，按优先级选择主链接
-                # 按平台优先级排序
-                sorted_records = sorted(
-                    group_records,
+                sorted_group = sorted(
+                    group,
                     key=lambda r: PLATFORM_PRIORITY.get(r.get("platform", "unknown"), 999)
                 )
 
                 # 第一个是主链接
-                primary_record = sorted_records[0]
+                primary = sorted_group[0]
 
                 # 其他是同步链接
                 sync_links = [
                     {
                         "url": r["url"],
                         "platform": r["platform"],
-                        "raw_text": r["raw_text"]
+                        "raw_text": r.get("raw_link_text", "")
                     }
-                    for r in sorted_records[1:]
+                    for r in sorted_group[1:]
                 ]
 
-                # 创建一条合并的记录
-                merged_record = {
-                    "record_id": primary_record["record_id"],
-                    "media_name": media_name,
-                    "topic": primary_record.get("topic"),
-                    "primary_link": primary_record["url"],
-                    "primary_platform": primary_record["platform"],
-                    "sync_links": sync_links,
-                    "source_row": primary_record["source_row"]
+                # 合并记录
+                merged = {
+                    **primary,
+                    "primary_link": primary["url"],
+                    "primary_platform": primary["platform"],
+                    "sync_links": sync_links
                 }
 
-                result_records.append(merged_record)
+                result_records.append(merged)
 
                 logger.debug(
-                    "primary_selected",
-                    media=media_name,
-                    primary_platform=primary_record["platform"],
+                    "links_merged",
+                    record_id=record_id,
+                    primary_platform=primary["platform"],
                     sync_count=len(sync_links)
                 )
 
@@ -351,9 +289,18 @@ class Node01FillBasic(BaseNode):
     def _check_duplicates(
         self,
         records: List[Dict[str, Any]],
-        issue_collector: IssueCollector
+        issues: List[Issue]
     ) -> List[Dict[str, Any]]:
-        """检查重复链接"""
+        """
+        检查重复的主链接
+
+        Args:
+            records: 记录列表
+            issues: 问题列表（会添加新的问题）
+
+        Returns:
+            标记了重复的记录列表
+        """
         seen_urls = {}
 
         for record in records:
@@ -363,23 +310,23 @@ class Node01FillBasic(BaseNode):
 
             if url in seen_urls:
                 # 发现重复
-                original_record_id = seen_urls[url]
+                original_id = seen_urls[url]
                 record["is_duplicate"] = True
-                record["duplicate_of"] = original_record_id
+                record["duplicate_of"] = original_id
 
-                issue_collector.add_warning(
+                issues.append(Issue(
+                    level="warning",
                     code="DUPLICATE_URL",
                     message=f"发现重复的URL: {url}",
                     node_id=self.node_id,
-                    record_id=record["record_id"],
+                    record_id=record.get("id"),
                     details={
                         "url": url,
-                        "original_record": original_record_id,
-                        "current_media": record.get("media_name"),
+                        "original_record": original_id
                     }
-                )
+                ))
             else:
-                seen_urls[url] = record["record_id"]
+                seen_urls[url] = record.get("id")
                 record["is_duplicate"] = False
 
         return records
