@@ -1,2 +1,5 @@
-def main() -> None:
-    print("Hello from workflow!")
+"""约稿费用验收工作流的公共入口。"""
+
+__version__ = "1.0.0"
+
+__all__ = ["__version__"]

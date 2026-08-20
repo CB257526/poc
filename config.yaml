@@ -1,0 +1,40 @@
+# 工作流配置文件
+
+workflow:
+  name: "quotation-fee-workflow"
+  version: "1.0.0"
+  checkpoint_db: "checkpoints.db"
+
+# 表格配置
+tables:
+  dir: "./table"
+  required:
+    - "3-媒体库"
+    - "4-账户信息"
+    - "5-费用"
+
+# 存储配置
+storage:
+  artifacts_dir: "./artifacts"
+  logs_dir: "./logs"
+  max_artifact_size_mb: 100
+
+# 日志配置
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+  format: "json"  # json, console
+  output: "both"  # console, file, both
+
+# API配置（MCP服务器）
+api:
+  host: "0.0.0.0"
+  port: 8000
+  cors_origins:
+    - "*"
+
+# LLM配置（当前未使用，预留）
+llm:
+  enabled: false
+  # provider: "anthropic"
+  # model: "claude-3-5-sonnet-20241022"
+  # api_key: "your-api-key"

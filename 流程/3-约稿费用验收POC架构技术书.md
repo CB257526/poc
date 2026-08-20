@@ -1,10 +1,8 @@
 # 约稿费用验收 POC 工作流架构技术书
 
-> 说明：本文件为 v0.1 历史版本。当前请以同目录下的《3-约稿费用验收POC架构技术书-v2.md》（平台预留版）为准，尤其是 HTTP MCP、运行协议和未来平台扩展接口设计。
-
-版本：v0.1  
-适用范围：约稿费用验收 POC、LangChain/LangGraph 工作流、MCP 对外复用  
-依据资料：流程/1.md、流程/2.md、table 目录下 6 份 Excel 样例  
+版本：v0.1
+适用范围：约稿费用验收 POC、LangChain/LangGraph 工作流、MCP 对外复用
+依据资料：流程/1.md、流程/2.md、table 目录下 6 份 Excel 样例
 编写日期：2026-08-19
 
 ## 1. 文档目的
@@ -29,7 +27,7 @@
 
 当前链路为：
 
-~~~text
+```text
 1-链接
   -> 2-约稿资料
   -> 3-媒体库补充媒体级别、粉丝量
@@ -38,20 +36,20 @@
   -> 约稿单次明细
   -> 约稿费用合计（媒体、月份维度）
   -> 6-付款（银行卡付款模板）
-~~~
+```
 
 流程/2.md 还要求对链接进行清洗、拆分、去重、主发布链接与同步平台识别、页面标题/发布日期/截图采集，以及输出异常清单、人工修改记录和归档材料。
 
 ### 2.2 样例表格审计
 
-| 文件 | 实际工作表和规模 | 实际字段或结构 | 对架构的影响 |
-|---|---|---|---|
-| 1-链接.xlsx | Sheet1，44 行、2 列 | A 列在媒体首行或“主题”行出现；B 列包含一条或多条带平台前缀的链接 | 需要按组继承媒体和主题，不能按单行直接解析 |
-| 2-约稿资料.xlsx | 约稿 9 行×23 列；约稿费用合计 8 行×14 列 | 已经包含两个中间结果工作表，含截图公式、Excel 日期序列、同步平台长文本 | 既要支持导入现有结果，也要重新生成规范结果 |
-| 3-媒体库.xlsx | Sheet1，5 行×18 列 | 媒体名称、级别、粉丝量、媒体人、平台主页、身份证号等 | 媒体名称不能作为唯一主键，需建立规范媒体 ID 和别名映射 |
-| 4-账户信息.xlsx | Sheet1，5 行×13 列 | 媒体、户名、身份证号、银行卡、电话、开户行和城市 | 含身份证、银行卡、电话等敏感字段，日志和 MCP 返回必须脱敏 |
-| 5-费用.xlsx | Sheet1，4 行×3 列 | 等级、视频费用、图文费用；没有发布形式、平台、版本、生效日期 | POC 采用兼容适配器；生产模型预留扩展维度 |
-| 6-付款.xlsx | 上传模板，9423 行×8 列 | 前 4 行为固定模板头，第 5 行起写付款订单，B/F 列参与汇总公式 | 生成时必须保留模板头、公式和列顺序，不可把业务字段直接写入模板 |
+| 文件            | 实际工作表和规模                           | 实际字段或结构                                                         | 对架构的影响                                                   |
+| --------------- | ------------------------------------------ | ---------------------------------------------------------------------- | -------------------------------------------------------------- |
+| 1-链接.xlsx     | Sheet1，44 行、2 列                        | A 列在媒体首行或“主题”行出现；B 列包含一条或多条带平台前缀的链接     | 需要按组继承媒体和主题，不能按单行直接解析                     |
+| 2-约稿资料.xlsx | 约稿 9 行×23 列；约稿费用合计 8 行×14 列 | 已经包含两个中间结果工作表，含截图公式、Excel 日期序列、同步平台长文本 | 既要支持导入现有结果，也要重新生成规范结果                     |
+| 3-媒体库.xlsx   | Sheet1，5 行×18 列                        | 媒体名称、级别、粉丝量、媒体人、平台主页、身份证号等                   | 媒体名称不能作为唯一主键，需建立规范媒体 ID 和别名映射         |
+| 4-账户信息.xlsx | Sheet1，5 行×13 列                        | 媒体、户名、身份证号、银行卡、电话、开户行和城市                       | 含身份证、银行卡、电话等敏感字段，日志和 MCP 返回必须脱敏      |
+| 5-费用.xlsx     | Sheet1，4 行×3 列                         | 等级、视频费用、图文费用；没有发布形式、平台、版本、生效日期           | POC 采用兼容适配器；生产模型预留扩展维度                       |
+| 6-付款.xlsx     | 上传模板，9423 行×8 列                    | 前 4 行为固定模板头，第 5 行起写付款订单，B/F 列参与汇总公式           | 生成时必须保留模板头、公式和列顺序，不可把业务字段直接写入模板 |
 
 ### 2.3 样例数据中的重要事实和风险
 
@@ -68,20 +66,20 @@
 
 按样例中的明细金额：
 
-| 媒体 | 明细 | 单价 | 数量 | 小计 |
-|---|---:|---:|---:|---:|
-| Alex Cui | 视频、FA | 2000 | 1 | 2000 |
-| Johnny Durn | 图文、FB | 800 | 1 | 800 |
-| Oxygen | 图文、FC | 600 | 2 | 1200 |
-| 景行 | 图文、FC | 600 | 2 | 1200 |
-| 合计 |  |  | 6 | 5200 |
+| 媒体        |     明细 | 单价 | 数量 | 小计 |
+| ----------- | -------: | ---: | ---: | ---: |
+| Alex Cui    | 视频、FA | 2000 |    1 | 2000 |
+| Johnny Durn | 图文、FB |  800 |    1 |  800 |
+| Oxygen      | 图文、FC |  600 |    2 | 1200 |
+| 景行        | 图文、FC |  600 |    2 | 1200 |
+| 合计        |          |      |    6 | 5200 |
 
 工作流必须通过以下不变量：
 
-~~~text
+```text
 有效明细金额之和 = 约稿费用合计金额之和 = 付款订单金额之和
 有效明细数量之和 = 汇总数量之和 = 付款订单对应的有效约稿数量
-~~~
+```
 
 任何不满足不变量的运行，均不得生成“可付款”状态的结果。
 
@@ -120,7 +118,7 @@
 
 ### 4.1 逻辑架构
 
-~~~mermaid
+```mermaid
 flowchart LR
     A["MCP 客户端/其他平台"] --> B["MCP Server"]
     B --> C["运行编排服务"]
@@ -139,45 +137,45 @@ flowchart LR
     J --> B
     K --> B
     L --> B
-~~~
+```
 
 ### 4.2 组件职责
 
-| 组件 | POC 推荐实现 | 生产演进方向 |
-|---|---|---|
-| 工作流运行时 | Python 3.14、LangGraph StateGraph | 保持 LangGraph，使用任务队列扩展并发 |
-| LLM 调用 | LangChain ChatModel + 结构化输出 | OpenAI/兼容模型，可按节点配置模型 |
-| 检查点 | SQLite checkpointer | PostgreSQL checkpointer，按 run_id、node_id 索引 |
-| 规范化数据 | SQLite/SQLModel 或 JSONL | PostgreSQL，敏感字段独立加密列 |
-| 产物存储 | 工作区 artifacts/run_id | S3/MinIO，版本化和生命周期管理 |
-| 页面抓取 | httpx，必要时 Playwright | 独立浏览器服务，域名白名单和限流 |
-| MCP 传输 | stdio | Streamable HTTP；需要时保留 stdio |
-| 日志 | JSONL + Python logging | OpenTelemetry + 日志平台 + 指标系统 |
-| Excel 读写 | openpyxl，模板渲染器 | openpyxl 结合对象存储和异步导出 |
-| 服务接口 | MCP 为主，可附带 FastAPI 健康检查 | MCP 网关、鉴权、租户隔离和审计 |
+| 组件         | POC 推荐实现                      | 生产演进方向                                     |
+| ------------ | --------------------------------- | ------------------------------------------------ |
+| 工作流运行时 | Python 3.14、LangGraph StateGraph | 保持 LangGraph，使用任务队列扩展并发             |
+| LLM 调用     | LangChain ChatModel + 结构化输出  | OpenAI/兼容模型，可按节点配置模型                |
+| 检查点       | SQLite checkpointer               | PostgreSQL checkpointer，按 run_id、node_id 索引 |
+| 规范化数据   | SQLite/SQLModel 或 JSONL          | PostgreSQL，敏感字段独立加密列                   |
+| 产物存储     | 工作区 artifacts/run_id           | S3/MinIO，版本化和生命周期管理                   |
+| 页面抓取     | httpx，必要时 Playwright          | 独立浏览器服务，域名白名单和限流                 |
+| MCP 传输     | stdio                             | Streamable HTTP；需要时保留 stdio                |
+| 日志         | JSONL + Python logging            | OpenTelemetry + 日志平台 + 指标系统              |
+| Excel 读写   | openpyxl，模板渲染器              | openpyxl 结合对象存储和异步导出                  |
+| 服务接口     | MCP 为主，可附带 FastAPI 健康检查 | MCP 网关、鉴权、租户隔离和审计                   |
 
 ### 4.3 推荐运行模式
 
 POC 本地模式：
 
-~~~text
+```text
 MCP 客户端 --stdio--> workflow_mcp_server
                                   |
                                   +-- LangGraph
                                   +-- SQLite
                                   +-- ./artifacts/<run_id>/
-~~~
+```
 
 共享服务模式：
 
-~~~text
+```text
 MCP 客户端 --Streamable HTTP--> MCP 网关
                                   |
                                   +-- 运行服务/任务队列
                                   +-- PostgreSQL
                                   +-- MinIO/S3
                                   +-- 浏览器抓取服务
-~~~
+```
 
 共享服务下客户端只拿到 run_id、脱敏状态和 artifact_id，不直接获得服务器本地路径。
 
@@ -185,7 +183,7 @@ MCP 客户端 --Streamable HTTP--> MCP 网关
 
 ### 5.1 图级流程
 
-~~~mermaid
+```mermaid
 flowchart TD
     S["start_run"] --> A["ingest_files"]
     A --> B["inspect_and_bind_schema"]
@@ -207,48 +205,48 @@ flowchart TD
     Q --> E1["end"]
     Q --> E2["end_needs_review"]
     Q --> E3["end_failed"]
-~~~
+```
 
 每个节点返回统一的 NodeResult，并通过状态写入器记录实时状态。节点内的单条记录异常不会使整个图立即中断；只有文件不可读、Schema 无法识别、规则快照缺失、产物写入失败等运行级错误才走 end_failed。
 
 ### 5.2 子图划分
 
-| 子图 | 包含节点 | 输出 |
-|---|---|---|
-| ingest_subgraph | start_run、ingest_files、inspect_and_bind_schema | 规范化文件和字段绑定 |
-| evidence_subgraph | parse_and_group_links、deduplicate_links、classify_primary_and_sync、fetch_and_extract_pages、validate_publication_evidence | 链接、页面证据和发稿核验状态 |
-| enrichment_subgraph | normalize_reference_data、match_media、match_account、match_fee_rule | 媒体、账户、费用规则匹配结果 |
-| settlement_subgraph | calculate_quote_details、build_quote_detail、aggregate_monthly、validate_payment_rows | 约稿明细、月度合计和付款行 |
-| export_subgraph | render_artifacts、finalize_run | Excel、JSON、异常和审计产物 |
+| 子图                | 包含节点                                                                                                                    | 输出                         |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------- | ---------------------------- |
+| ingest_subgraph     | start_run、ingest_files、inspect_and_bind_schema                                                                            | 规范化文件和字段绑定         |
+| evidence_subgraph   | parse_and_group_links、deduplicate_links、classify_primary_and_sync、fetch_and_extract_pages、validate_publication_evidence | 链接、页面证据和发稿核验状态 |
+| enrichment_subgraph | normalize_reference_data、match_media、match_account、match_fee_rule                                                        | 媒体、账户、费用规则匹配结果 |
+| settlement_subgraph | calculate_quote_details、build_quote_detail、aggregate_monthly、validate_payment_rows                                       | 约稿明细、月度合计和付款行   |
+| export_subgraph     | render_artifacts、finalize_run                                                                                              | Excel、JSON、异常和审计产物  |
 
 子图是代码和状态管理边界，不是人工交互边界。
 
 ### 5.3 状态值
 
-| 状态 | 含义 | 是否终态 |
-|---|---|---|
-| pending | 已入图但尚未执行 | 否 |
-| running | 正在执行 | 否 |
-| succeeded | 节点完成，输出满足节点契约 | 是 |
-| failed | 节点级不可恢复错误，或重试耗尽 | 是 |
-| blocked | 由于输入异常无法继续，但不等待图内交互 | 是 |
-| skipped | 根据分支或配置跳过 | 是 |
+| 状态      | 含义                                   | 是否终态 |
+| --------- | -------------------------------------- | -------- |
+| pending   | 已入图但尚未执行                       | 否       |
+| running   | 正在执行                               | 否       |
+| succeeded | 节点完成，输出满足节点契约             | 是       |
+| failed    | 节点级不可恢复错误，或重试耗尽         | 是       |
+| blocked   | 由于输入异常无法继续，但不等待图内交互 | 是       |
+| skipped   | 根据分支或配置跳过                     | 是       |
 
 运行级 result_status：
 
-| 值 | 含义 |
-|---|---|
-| running | 仍在执行 |
-| succeeded | 所有必需节点成功且无未解决阻断异常 |
+| 值           | 含义                                                         |
+| ------------ | ------------------------------------------------------------ |
+| running      | 仍在执行                                                     |
+| succeeded    | 所有必需节点成功且无未解决阻断异常                           |
 | needs_review | 工作流完成但有待处理 issue；可下载复核产物，不可标记为可付款 |
-| failed | 运行级错误或必需产物生成失败 |
-| cancelled | 由外部取消 |
+| failed       | 运行级错误或必需产物生成失败                                 |
+| cancelled    | 由外部取消                                                   |
 
 ## 6. 统一数据契约
 
 ### 6.1 RunContext
 
-~~~json
+```json
 {
   "run_id": "run_20260819_01H...",
   "idempotency_key": "sha256:...",
@@ -281,7 +279,7 @@ flowchart TD
     "exclude_unresolved_from_payment": true
   }
 }
-~~~
+```
 
 ### 6.2 记录级通用字段
 
@@ -289,7 +287,7 @@ flowchart TD
 
 ### 6.3 LinkRecord
 
-~~~json
+```json
 {
   "record_id": "linkrec_...",
   "group_id": "group_topic1_alex",
@@ -313,11 +311,11 @@ flowchart TD
     "column": "B"
   }
 }
-~~~
+```
 
 ### 6.4 PublicationRecord
 
-~~~json
+```json
 {
   "record_id": "pub_...",
   "group_id": "group_topic1_alex",
@@ -346,7 +344,7 @@ flowchart TD
   },
   "publication_status": "valid"
 }
-~~~
+```
 
 ### 6.5 MediaProfile、AccountProfile、FeeRule
 
@@ -354,7 +352,7 @@ MediaProfile 至少包含 media_id、media_name、aliases、level、fans、conta
 
 AccountProfile 的原始值只在受保护存储中保存，工作流内部使用引用：
 
-~~~json
+```json
 {
   "account_id": "acct_...",
   "media_id": "media_...",
@@ -366,11 +364,11 @@ AccountProfile 的原始值只在受保护存储中保存，工作流内部使�
   "bank_city": "上海",
   "match_status": "matched"
 }
-~~~
+```
 
 FeeRule 同时支持当前 POC 和扩展规则：
 
-~~~json
+```json
 {
   "fee_rule_id": "fee_...",
   "level": "FC",
@@ -385,11 +383,11 @@ FeeRule 同时支持当前 POC 和扩展规则：
   "rule_version": "poc-2026-08",
   "source_snapshot_id": "fee_snapshot_..."
 }
-~~~
+```
 
 ### 6.6 QuoteDetail、MonthlySummary、PaymentRow
 
-~~~json
+```json
 {
   "quote_id": "quote_...",
   "publication_record_id": "pub_...",
@@ -408,21 +406,21 @@ FeeRule 同时支持当前 POC 和扩展规则：
     "inputs": ["fee_...", "quantity=1"]
   }
 }
-~~~
+```
 
 MonthlySummary 的分组键固定为 tenant_id + target_month + media_id + account_id。同一媒体同月出现多个账户时，不能静默合并，必须生成 account_conflict issue。
 
 PaymentRow 到 6-付款模板的映射：
 
-| PaymentRow | 6-付款.xlsx |
-|---|---|
-| batch_no | 第 3 行 A 列，且与文件名一致 |
-| bank_account | 第 5 行起 B 列 |
-| holder_name | 第 5 行起 C 列 |
-| id_number | 第 5 行起 D 列 |
-| phone | 第 5 行起 E 列 |
-| payable_amount | 第 5 行起 F 列 |
-| remark | 第 5 行起 G 列 |
+| PaymentRow     | 6-付款.xlsx                  |
+| -------------- | ---------------------------- |
+| batch_no       | 第 3 行 A 列，且与文件名一致 |
+| bank_account   | 第 5 行起 B 列               |
+| holder_name    | 第 5 行起 C 列               |
+| id_number      | 第 5 行起 D 列               |
+| phone          | 第 5 行起 E 列               |
+| payable_amount | 第 5 行起 F 列               |
+| remark         | 第 5 行起 G 列               |
 
 ## 7. 节点详细设计
 
@@ -430,218 +428,218 @@ PaymentRow 到 6-付款模板的映射：
 
 ### 7.1 start_run
 
-| 项目 | 设计 |
-|---|---|
-| 目的 | 创建 run_id、校验幂等键、锁定工作流和规则版本 |
-| 输入 | requester、输入 artifact_id、配置、idempotency_key |
-| 输出 | RunContext、初始 NodeStatus |
-| 确定性 | 100% 代码 |
-| 失败条件 | 缺少必填输入、幂等键冲突且参数不同、版本不存在 |
-| 重试 | 不重试；修正请求后新建运行 |
-| 幂等 | 输入文件哈希 + 参考快照哈希 + 配置规范化 JSON 哈希 |
+| 项目     | 设计                                               |
+| -------- | -------------------------------------------------- |
+| 目的     | 创建 run_id、校验幂等键、锁定工作流和规则版本      |
+| 输入     | requester、输入 artifact_id、配置、idempotency_key |
+| 输出     | RunContext、初始 NodeStatus                        |
+| 确定性   | 100% 代码                                          |
+| 失败条件 | 缺少必填输入、幂等键冲突且参数不同、版本不存在     |
+| 重试     | 不重试；修正请求后新建运行                         |
+| 幂等     | 输入文件哈希 + 参考快照哈希 + 配置规范化 JSON 哈希 |
 
 ### 7.2 ingest_files
 
-| 项目 | 设计 |
-|---|---|
-| 目的 | 读取 xlsx，扫描 Sheet、尺寸、表头、公式、空行和文件元数据 |
-| 输入 | RunContext、输入文件 |
-| 输出 | RawWorkbook、WorkbookProfile、source_file 记录 |
-| 确定性 | 100% 代码 |
-| 失败条件 | 文件损坏、非 xlsx、大小超过限制、恶意压缩包、无法读取 |
-| 重试 | 磁盘/对象存储临时错误可重试 2 次；文件错误不重试 |
-| 指标 | files_total、files_ok、files_failed、bytes_read |
+| 项目     | 设计                                                      |
+| -------- | --------------------------------------------------------- |
+| 目的     | 读取 xlsx，扫描 Sheet、尺寸、表头、公式、空行和文件元数据 |
+| 输入     | RunContext、输入文件                                      |
+| 输出     | RawWorkbook、WorkbookProfile、source_file 记录            |
+| 确定性   | 100% 代码                                                 |
+| 失败条件 | 文件损坏、非 xlsx、大小超过限制、恶意压缩包、无法读取     |
+| 重试     | 磁盘/对象存储临时错误可重试 2 次；文件错误不重试          |
+| 指标     | files_total、files_ok、files_failed、bytes_read           |
 
 读取时同时保存 data_only=False 和 data_only=True 视图，防止把公式和公式计算值混淆。原始文件采用只读访问，规范化结果写入新的运行目录。
 
 ### 7.3 inspect_and_bind_schema
 
-| 项目 | 设计 |
-|---|---|
-| 目的 | 将实际 Sheet 和列绑定到逻辑表，记录字段映射和置信度 |
-| 输入 | WorkbookProfile、表模板注册表 |
-| 输出 | SchemaBinding、字段缺失/多余 issue |
-| 确定性 | 代码优先，必要时 LLM 仅给候选映射 |
+| 项目     | 设计                                                     |
+| -------- | -------------------------------------------------------- |
+| 目的     | 将实际 Sheet 和列绑定到逻辑表，记录字段映射和置信度      |
+| 输入     | WorkbookProfile、表模板注册表                            |
+| 输出     | SchemaBinding、字段缺失/多余 issue                       |
+| 确定性   | 代码优先，必要时 LLM 仅给候选映射                        |
 | 关键规则 | 表名、固定表头、别名和列位置联合识别；不得只按文件名识别 |
-| 阻断条件 | 核心表无法绑定、付款模板头被修改 |
-| 重试 | 不盲目重试；改用模板配置或补充文件 |
+| 阻断条件 | 核心表无法绑定、付款模板头被修改                         |
+| 重试     | 不盲目重试；改用模板配置或补充文件                       |
 
 模板注册表保存逻辑表名、允许的 Sheet 名、列别名、类型、是否必填、敏感等级、版本和兼容策略。
 
 ### 7.4 normalize_reference_data
 
-| 项目 | 设计 |
-|---|---|
-| 目的 | 规范化媒体库、账户信息和费用表，生成引用快照 |
-| 输入 | 3-媒体库、4-账户信息、5-费用 |
-| 输出 | MediaProfile、AccountProfile、FeeRule、快照哈希 |
-| 关键规则 | 去除首尾空格，保留原值；身份证/银行卡/电话只做格式校验；金额使用 Decimal |
+| 项目         | 设计                                                                           |
+| ------------ | ------------------------------------------------------------------------------ |
+| 目的         | 规范化媒体库、账户信息和费用表，生成引用快照                                   |
+| 输入         | 3-媒体库、4-账户信息、5-费用                                                   |
+| 输出         | MediaProfile、AccountProfile、FeeRule、快照哈希                                |
+| 关键规则     | 去除首尾空格，保留原值；身份证/银行卡/电话只做格式校验；金额使用 Decimal       |
 | POC 费用适配 | 将视频费用、图文费用转换为 quotation_type 维度，publication_form/platform 为空 |
-| 阻断条件 | 费用等级重复且单价冲突；同媒体同账户键对应多个不一致账户 |
-| 重试 | 不重试，数据问题转 issue |
+| 阻断条件     | 费用等级重复且单价冲突；同媒体同账户键对应多个不一致账户                       |
+| 重试         | 不重试，数据问题转 issue                                                       |
 
 ### 7.5 parse_and_group_links
 
-| 项目 | 设计 |
-|---|---|
-| 目的 | 将 1-链接.xlsx 转为一条 URL 一个 LinkRecord，并继承媒体、主题和批次上下文 |
-| 输入 | 原始 Sheet 行 |
-| 输出 | LinkRecord 列表、分组统计 |
+| 项目     | 设计                                                                               |
+| -------- | ---------------------------------------------------------------------------------- |
+| 目的     | 将 1-链接.xlsx 转为一条 URL 一个 LinkRecord，并继承媒体、主题和批次上下文          |
+| 输入     | 原始 Sheet 行                                                                      |
+| 输出     | LinkRecord 列表、分组统计                                                          |
 | 关键规则 | 识别 http/https URL；删除首尾引号；去除分享口令污染；保留 raw_text；媒体名沿组继承 |
-| 平台识别 | URL 域名注册表优先；未知域名标记 unknown，不猜测 |
-| 阻断条件 | 有 URL 但没有可继承媒体上下文 |
-| 重试 | 不重试 |
+| 平台识别 | URL 域名注册表优先；未知域名标记 unknown，不猜测                                   |
+| 阻断条件 | 有 URL 但没有可继承媒体上下文                                                      |
+| 重试     | 不重试                                                                             |
 
 平台注册表至少覆盖知乎、微博、微信/视频号、B 站、抖音、小红书、易车、懂车帝、百家号、头条、搜狐、汽车之家。
 
 ### 7.6 deduplicate_links
 
-| 项目 | 设计 |
-|---|---|
-| 目的 | 识别同组重复、跨组重复和规范化 URL 重复 |
-| 输入 | LinkRecord |
-| 输出 | duplicate_of、dedup_group_id、去重统计 |
-| 规范化 | 小写域名、移除无意义尾斜杠、按平台规则处理追踪参数；原 URL 永久保留 |
-| 规则 | 同一 canonical_url 默认只保留一条；跨媒体重复不自动删除，生成高优先级 issue |
-| 重试 | 不重试 |
+| 项目   | 设计                                                                        |
+| ------ | --------------------------------------------------------------------------- |
+| 目的   | 识别同组重复、跨组重复和规范化 URL 重复                                     |
+| 输入   | LinkRecord                                                                  |
+| 输出   | duplicate_of、dedup_group_id、去重统计                                      |
+| 规范化 | 小写域名、移除无意义尾斜杠、按平台规则处理追踪参数；原 URL 永久保留         |
+| 规则   | 同一 canonical_url 默认只保留一条；跨媒体重复不自动删除，生成高优先级 issue |
+| 重试   | 不重试                                                                      |
 
 ### 7.7 classify_primary_and_sync
 
-| 项目 | 设计 |
-|---|---|
-| 目的 | 为每个约稿组选择一个主发布链接，其余链接作为同步链接 |
-| 输入 | LinkRecord 分组、平台优先级配置、可选 LLM 候选 |
-| 输出 | primary_url、sync_links、classification_reason |
-| 确定性规则 | 业务配置的主平台优先级 > 2-约稿资料已有值 > 页面证据 > LLM 候选 |
-| 低置信度 | 没有唯一主链接时，保留所有候选并生成 primary_link_ambiguous issue |
-| 重试 | 规则读取错误可重试；分类结果不因重试改变 |
+| 项目       | 设计                                                              |
+| ---------- | ----------------------------------------------------------------- |
+| 目的       | 为每个约稿组选择一个主发布链接，其余链接作为同步链接              |
+| 输入       | LinkRecord 分组、平台优先级配置、可选 LLM 候选                    |
+| 输出       | primary_url、sync_links、classification_reason                    |
+| 确定性规则 | 业务配置的主平台优先级 > 2-约稿资料已有值 > 页面证据 > LLM 候选   |
+| 低置信度   | 没有唯一主链接时，保留所有候选并生成 primary_link_ambiguous issue |
+| 重试       | 规则读取错误可重试；分类结果不因重试改变                          |
 
 LLM 输出只允许为候选列表和理由，最终选择由规则引擎完成。流程图不暂停等待人工。
 
 ### 7.8 fetch_and_extract_pages
 
-| 项目 | 设计 |
-|---|---|
-| 目的 | 访问主发布链接，提取标题、平台、作者、发布日期并生成页面快照/截图 |
-| 输入 | PublicationRecord |
-| 输出 | PageEvidence、截图 artifact_id、HTTP/浏览器指标 |
-| 访问策略 | httpx 先请求；需要 JavaScript 时再进入受控 Playwright；每个域名限流 |
+| 项目     | 设计                                                                       |
+| -------- | -------------------------------------------------------------------------- |
+| 目的     | 访问主发布链接，提取标题、平台、作者、发布日期并生成页面快照/截图          |
+| 输入     | PublicationRecord                                                          |
+| 输出     | PageEvidence、截图 artifact_id、HTTP/浏览器指标                            |
+| 访问策略 | httpx 先请求；需要 JavaScript 时再进入受控 Playwright；每个域名限流        |
 | LLM 范围 | 页面文本已获取但 DOM 规则无法解析时，结构化提取标题/日期候选并返回证据片段 |
-| 阻断条件 | 登录/验证码、禁止访问、页面持续失败；生成 needs_review 而不是伪造字段 |
-| 重试 | 网络超时 2 次指数退避；403/验证码不超过 1 次 |
+| 阻断条件 | 登录/验证码、禁止访问、页面持续失败；生成 needs_review 而不是伪造字段      |
+| 重试     | 网络超时 2 次指数退避；403/验证码不超过 1 次                               |
 
 截图命名包含 run_id、publication_record_id 和页面哈希，PNG/JPEG 作为独立 artifact。截图不可只保存在模型上下文。
 
 ### 7.9 validate_publication_evidence
 
-| 项目 | 设计 |
-|---|---|
-| 目的 | 校验链接、标题、截图、发布日期和约稿类型是否足以证明有效发稿 |
-| 输入 | PublicationRecord、PageEvidence、配置 |
-| 输出 | publication_status、evidence_score、issues |
+| 项目 | 设计                                                                           |
+| ---- | ------------------------------------------------------------------------------ |
+| 目的 | 校验链接、标题、截图、发布日期和约稿类型是否足以证明有效发稿                   |
+| 输入 | PublicationRecord、PageEvidence、配置                                          |
+| 输出 | publication_status、evidence_score、issues                                     |
 | 校验 | 主链接可访问、标题非空、发布日期可解析、截图存在或明确缺失原因、重复链接未计费 |
-| 结果 | valid、needs_review、invalid、excluded |
-| 重试 | 纯校验不重试 |
+| 结果 | valid、needs_review、invalid、excluded                                         |
+| 重试 | 纯校验不重试                                                                   |
 
 发布时间必须区分 published_at、submitted_at、source_submitted_at。无法识别年份的日期不能直接当作结算月份。
 
 ### 7.10 match_media
 
-| 项目 | 设计 |
-|---|---|
-| 目的 | 使用媒体 ID、标准名称、主页 URL 和已确认别名匹配媒体库 |
-| 输入 | PublicationRecord、MediaProfile 快照 |
-| 输出 | media_id、级别、粉丝量、match_method、match_confidence |
-| 优先级 | media_id > exact name > canonical profile URL > approved alias；禁止无证据模糊匹配 |
-| 阻断条件 | 0 个匹配、多个冲突匹配、媒体库字段缺失 |
-| 重试 | 不重试；修改别名映射后重跑匹配子图 |
+| 项目     | 设计                                                                               |
+| -------- | ---------------------------------------------------------------------------------- |
+| 目的     | 使用媒体 ID、标准名称、主页 URL 和已确认别名匹配媒体库                             |
+| 输入     | PublicationRecord、MediaProfile 快照                                               |
+| 输出     | media_id、级别、粉丝量、match_method、match_confidence                             |
+| 优先级   | media_id > exact name > canonical profile URL > approved alias；禁止无证据模糊匹配 |
+| 阻断条件 | 0 个匹配、多个冲突匹配、媒体库字段缺失                                             |
+| 重试     | 不重试；修改别名映射后重跑匹配子图                                                 |
 
 ### 7.11 match_account
 
-| 项目 | 设计 |
-|---|---|
-| 目的 | 为媒体匹配唯一有效收款账户 |
-| 输入 | media_id、媒体名、AccountProfile 快照 |
-| 输出 | account_id、受保护字段引用、脱敏摘要、match_status |
-| 校验 | 户名、身份证号格式、银行卡格式、电话格式、开户行城市完整性 |
-| 阻断条件 | 无账户、多账户冲突、账户失效、关键字段缺失 |
-| 重试 | 不重试 |
+| 项目     | 设计                                                       |
+| -------- | ---------------------------------------------------------- |
+| 目的     | 为媒体匹配唯一有效收款账户                                 |
+| 输入     | media_id、媒体名、AccountProfile 快照                      |
+| 输出     | account_id、受保护字段引用、脱敏摘要、match_status         |
+| 校验     | 户名、身份证号格式、银行卡格式、电话格式、开户行城市完整性 |
+| 阻断条件 | 无账户、多账户冲突、账户失效、关键字段缺失                 |
+| 重试     | 不重试                                                     |
 
 MCP 默认只返回 6228********6271 形式的掩码。只有具备付款导出权限的服务端任务可以解密并写入 6-付款文件。
 
 ### 7.12 match_fee_rule
 
-| 项目 | 设计 |
-|---|---|
-| 目的 | 根据媒体级别、约稿类型、发布形式、平台和生效日期匹配唯一费用规则 |
-| 输入 | PublicationRecord、MediaProfile、FeeRule 快照 |
-| 输出 | fee_rule_id、unit_base_amount、unit_reward_amount、match_status |
+| 项目     | 设计                                                                   |
+| -------- | ---------------------------------------------------------------------- |
+| 目的     | 根据媒体级别、约稿类型、发布形式、平台和生效日期匹配唯一费用规则       |
+| 输入     | PublicationRecord、MediaProfile、FeeRule 快照                          |
+| 输出     | fee_rule_id、unit_base_amount、unit_reward_amount、match_status        |
 | POC 兼容 | 当前 5-费用.xlsx 映射为 level + quotation_type；缺失维度按 null 参与键 |
-| 阻断条件 | 无规则、多规则价格冲突、日期不在有效期、数量非法 |
-| 重试 | 不重试 |
+| 阻断条件 | 无规则、多规则价格冲突、日期不在有效期、数量非法                       |
+| 重试     | 不重试                                                                 |
 
 费用匹配键必须写入 calculation_trace，保证财务可以复算。
 
 ### 7.13 calculate_quote_details
 
-| 项目 | 设计 |
-|---|---|
-| 目的 | 为每条有效稿件计算单价、基础金额、奖励金额和总金额 |
-| 输入 | PublicationRecord、FeeRule、quantity |
-| 输出 | QuoteDetail |
+| 项目 | 设计                                                                                   |
+| ---- | -------------------------------------------------------------------------------------- |
+| 目的 | 为每条有效稿件计算单价、基础金额、奖励金额和总金额                                     |
+| 输入 | PublicationRecord、FeeRule、quantity                                                   |
+| 输出 | QuoteDetail                                                                            |
 | 公式 | base_amount = unit_base_amount × quantity；total_amount = base_amount + reward_amount |
-| 精度 | Decimal 计算，最终金额以元保留 2 位，ROUND_HALF_UP |
-| 保护 | 未通过发稿核验、媒体匹配、账户匹配或费用匹配的记录不可进入可付款集合 |
-| 重试 | 不重试；同一输入必须得到相同结果 |
+| 精度 | Decimal 计算，最终金额以元保留 2 位，ROUND_HALF_UP                                     |
+| 保护 | 未通过发稿核验、媒体匹配、账户匹配或费用匹配的记录不可进入可付款集合                   |
+| 重试 | 不重试；同一输入必须得到相同结果                                                       |
 
 ### 7.14 build_quote_detail
 
-| 项目 | 设计 |
-|---|---|
-| 目的 | 生成约稿明细表结构，合并业务字段、证据字段、匹配字段和计算字段 |
-| 输入 | QuoteDetail、PublicationRecord、MediaProfile、AccountProfile |
-| 输出 | 约稿明细数据集、列级 lineage |
+| 项目 | 设计                                                                               |
+| ---- | ---------------------------------------------------------------------------------- |
+| 目的 | 生成约稿明细表结构，合并业务字段、证据字段、匹配字段和计算字段                     |
+| 输入 | QuoteDetail、PublicationRecord、MediaProfile、AccountProfile                       |
+| 输出 | 约稿明细数据集、列级 lineage                                                       |
 | 规则 | 一篇有效稿件一条明细；同一媒体同月多篇不合并；无效或重复记录进入 excluded/异常区域 |
-| 校验 | 明细数量、单价和金额均非负；每行必须有 quote_id |
-| 重试 | 可从检查点重试 |
+| 校验 | 明细数量、单价和金额均非负；每行必须有 quote_id                                    |
+| 重试 | 可从检查点重试                                                                     |
 
 ### 7.15 aggregate_monthly
 
-| 项目 | 设计 |
-|---|---|
-| 目的 | 按 target_month + media_id + account_id 汇总约稿数量和金额 |
-| 输入 | 约稿明细 |
-| 输出 | 约稿费用合计 |
+| 项目 | 设计                                                                                                    |
+| ---- | ------------------------------------------------------------------------------------------------------- |
+| 目的 | 按 target_month + media_id + account_id 汇总约稿数量和金额                                              |
+| 输入 | 约稿明细                                                                                                |
+| 输出 | 约稿费用合计                                                                                            |
 | 公式 | summary_base = sum(base_amount)；summary_reward = sum(reward_amount)；summary_total = sum(total_amount) |
-| 规则 | 账户冲突不可静默合并；月份缺失的记录进入 issue |
-| 校验 | 汇总与明细逐组对账，合计必须一致 |
-| 重试 | 可从检查点重试 |
+| 规则 | 账户冲突不可静默合并；月份缺失的记录进入 issue                                                          |
+| 校验 | 汇总与明细逐组对账，合计必须一致                                                                        |
+| 重试 | 可从检查点重试                                                                                          |
 
 ### 7.16 validate_payment_rows
 
-| 项目 | 设计 |
-|---|---|
-| 目的 | 将汇总数据转为付款行并执行付款前最后校验 |
-| 输入 | MonthlySummary、账户受保护引用、业务复核结果 |
-| 输出 | PaymentRow、payment_eligible、付款校验报告 |
+| 项目 | 设计                                                                                       |
+| ---- | ------------------------------------------------------------------------------------------ |
+| 目的 | 将汇总数据转为付款行并执行付款前最后校验                                                   |
+| 输入 | MonthlySummary、账户受保护引用、业务复核结果                                               |
+| 输出 | PaymentRow、payment_eligible、付款校验报告                                                 |
 | 校验 | 户名/身份证/账号/电话完整；金额 > 0；同批次账户是否重复；不超过模板 10000 行；金额合计一致 |
-| 规则 | exclude_unresolved_from_payment=true 时，未解决 issue 的行不进入 PaymentRow |
-| 重试 | 不重试；修复数据后重跑该子图 |
+| 规则 | exclude_unresolved_from_payment=true 时，未解决 issue 的行不进入 PaymentRow                |
+| 重试 | 不重试；修复数据后重跑该子图                                                               |
 
 ### 7.17 render_artifacts
 
-| 项目 | 设计 |
-|---|---|
-| 目的 | 渲染规范 JSON、异常清单、约稿.xlsx、约稿费用合计.xlsx 和 6-付款.xlsx |
-| 输入 | QuoteDetail、MonthlySummary、PaymentRow、模板文件 |
-| 输出 | ArtifactManifest、sha256、文件大小和行数 |
-| Excel 规则 | 保留 6-付款模板前 4 行、列顺序、样式和公式；仅填充第 5 行起的订单 |
-| 安全 | 输出文件权限最小化，敏感文件单独标记 protected |
-| 重试 | 临时文件校验哈希后原子提交；写入失败可重试 2 次 |
+| 项目       | 设计                                                                 |
+| ---------- | -------------------------------------------------------------------- |
+| 目的       | 渲染规范 JSON、异常清单、约稿.xlsx、约稿费用合计.xlsx 和 6-付款.xlsx |
+| 输入       | QuoteDetail、MonthlySummary、PaymentRow、模板文件                    |
+| 输出       | ArtifactManifest、sha256、文件大小和行数                             |
+| Excel 规则 | 保留 6-付款模板前 4 行、列顺序、样式和公式；仅填充第 5 行起的订单    |
+| 安全       | 输出文件权限最小化，敏感文件单独标记 protected                       |
+| 重试       | 临时文件校验哈希后原子提交；写入失败可重试 2 次                      |
 
 推荐产物：
 
-~~~text
+```text
 artifacts/<run_id>/
   input/
   normalized/
@@ -652,18 +650,18 @@ artifacts/<run_id>/
   output/异常清单.xlsx
   output/运行报告.json
   audit/events.jsonl
-~~~
+```
 
 ### 7.18 finalize_run
 
-| 项目 | 设计 |
-|---|---|
-| 目的 | 汇总节点状态、统计、issue、产物和最终运行状态 |
-| 输入 | 全部 NodeResult、ArtifactManifest |
-| 输出 | RunSummary |
+| 项目     | 设计                                                                                           |
+| -------- | ---------------------------------------------------------------------------------------------- |
+| 目的     | 汇总节点状态、统计、issue、产物和最终运行状态                                                  |
+| 输入     | 全部 NodeResult、ArtifactManifest                                                              |
+| 输出     | RunSummary                                                                                     |
 | 结果规则 | 必需节点失败 -> failed；节点完成但 unresolved issue > 0 -> needs_review；全量通过 -> succeeded |
-| 关键校验 | 明细/汇总/付款金额和数量不变量；产物哈希；审计事件完整性 |
-| 重试 | 不重试 |
+| 关键校验 | 明细/汇总/付款金额和数量不变量；产物哈希；审计事件完整性                                       |
+| 重试     | 不重试                                                                                         |
 
 ## 8. 无交互设计和异常闭环
 
@@ -673,7 +671,7 @@ MCP 调用者可能是后台平台、定时任务或另一个 Agent，不一定�
 
 ### 8.2 Issue 数据结构
 
-~~~json
+```json
 {
   "issue_id": "iss_...",
   "run_id": "run_...",
@@ -694,15 +692,15 @@ MCP 调用者可能是后台平台、定时任务或另一个 Agent，不一定�
   "resolved_at": null,
   "resolved_by": null
 }
-~~~
+```
 
 ### 8.3 异常分级
 
-| 级别 | 示例 | 自动处理 |
-|---|---|---|
-| info | 发现额外空列、非关键字段被忽略 | 记录并继续 |
-| warning | 页面标题来自 meta、账户字段存在空格 | 记录并继续 |
-| high | 主链接不唯一、媒体多匹配、费用规则冲突 | 记录，相关行不进入付款 |
+| 级别     | 示例                                   | 自动处理                   |
+| -------- | -------------------------------------- | -------------------------- |
+| info     | 发现额外空列、非关键字段被忽略         | 记录并继续                 |
+| warning  | 页面标题来自 meta、账户字段存在空格    | 记录并继续                 |
+| high     | 主链接不唯一、媒体多匹配、费用规则冲突 | 记录，相关行不进入付款     |
 | critical | 文件损坏、付款模板被改写、金额对账失败 | 运行失败，不生成可付款产物 |
 
 ### 8.4 外部异常解决
@@ -720,7 +718,7 @@ POC 推荐重跑模式，逻辑简单、可审计。系统不允许通过自由�
 
 Python 实现时，建议使用 TypedDict 或 Pydantic 模型定义状态。状态只保存可序列化的引用和摘要，大文件、截图和原始工作簿写入 artifact store。
 
-~~~python
+```python
 class WorkflowState(TypedDict):
     # 中文注释：运行身份和版本，用于幂等、追踪和重放
     run: RunContext
@@ -734,7 +732,7 @@ class WorkflowState(TypedDict):
     artifacts: list[ArtifactRef]
     # 中文注释：对账指标和运行级结果
     metrics: RunMetrics
-~~~
+```
 
 代码中的注释必须使用中文，尤其是状态合并、重试、敏感字段处理和金额计算等容易误解的部分。
 
@@ -742,7 +740,7 @@ class WorkflowState(TypedDict):
 
 所有节点通过统一包装器执行：
 
-~~~text
+```text
 node_wrapper(node_id, handler):
   1. 写入 running 事件
   2. 读取输入摘要和上次检查点
@@ -752,7 +750,7 @@ node_wrapper(node_id, handler):
   6. 捕获异常，分类为 retryable/non_retryable
   7. 写入 failed/blocked 和 issue
   8. 保存检查点
-~~~
+```
 
 包装器不能记录完整身份证号、银行卡号、电话、页面 Cookie 或授权头。
 
@@ -800,9 +798,9 @@ LLM 请求统一要求：
 
 链接字段拆成：
 
-~~~text
+```text
 raw_text -> extracted_url -> canonical_url -> platform -> link_role
-~~~
+```
 
 不得因为 URL 规范化而丢失原始字符串。短链、分享口令、查询参数和跳转链都需在 PageEvidence 中保留。
 
@@ -810,10 +808,10 @@ raw_text -> extracted_url -> canonical_url -> platform -> link_role
 
 统一转换为带时区的 ISO 8601：
 
-~~~text
+```text
 published_at: 2026-02-03T12:34:00+08:00
 target_month: 2026-02
-~~~
+```
 
 Excel 序列日期根据工作簿日期系统转换；只有“11月1日”的值保留 original_value，并标记 year_missing，不允许自动推断结算月份。
 
@@ -841,7 +839,7 @@ MCP Server 是工作流的稳定适配层，不把 LangGraph 内部节点暴露�
 
 请求：
 
-~~~json
+```json
 {
   "idempotency_key": "client-defined-key",
   "input_artifacts": [
@@ -858,17 +856,17 @@ MCP Server 是工作流的稳定适配层，不把 LangGraph 内部节点暴露�
     "exclude_unresolved_from_payment": true
   }
 }
-~~~
+```
 
 返回：
 
-~~~json
+```json
 {
   "run_id": "run_...",
   "result_status": "running",
   "status_uri": "workflow://runs/run_.../status"
 }
-~~~
+```
 
 #### workflow_get_status
 
@@ -914,7 +912,7 @@ MCP Server 是工作流的稳定适配层，不把 LangGraph 内部节点暴露�
 
 建议提供只读资源：
 
-~~~text
+```text
 workflow://runs/{run_id}/status
 workflow://runs/{run_id}/issues
 workflow://runs/{run_id}/artifacts
@@ -922,7 +920,7 @@ workflow://runs/{run_id}/lineage/{record_id}
 workflow://runs/{run_id}/logs
 workflow://schemas/{workflow_version}
 workflow://fee-rules/{snapshot_id}
-~~~
+```
 
 资源内容默认是 JSON，账户信息以引用或掩码返回。MCP 工具负责改变运行状态，资源负责读取状态，保持查询和命令边界清晰。
 
@@ -940,17 +938,17 @@ workflow://fee-rules/{snapshot_id}
 
 状态写入采用“事件追加 + 当前投影”：
 
-~~~text
+```text
 NodeStarted -> Progress -> NodeSucceeded
                          -> NodeFailed
                          -> NodeBlocked
-~~~
+```
 
 事件是不可变记录，当前状态是可重建投影。这样既能实时查询，也能在状态库损坏时从事件重放。
 
 ### 12.2 NodeStatus 数据结构
 
-~~~json
+```json
 {
   "run_id": "run_...",
   "node_id": "match_media",
@@ -973,7 +971,7 @@ NodeStarted -> Progress -> NodeSucceeded
   "last_error": null,
   "checkpoint_id": "ckpt_..."
 }
-~~~
+```
 
 ### 12.3 结构化日志字段
 
@@ -981,7 +979,7 @@ NodeStarted -> Progress -> NodeSucceeded
 
 示例：
 
-~~~json
+```json
 {
   "timestamp": "2026-08-19T01:25:12.123Z",
   "level": "INFO",
@@ -996,7 +994,7 @@ NodeStarted -> Progress -> NodeSucceeded
   "input_ref": "fee_snapshot_...",
   "code_revision": "git:abc123"
 }
-~~~
+```
 
 ### 12.4 敏感信息日志策略
 
@@ -1033,14 +1031,14 @@ NodeStarted -> Progress -> NodeSucceeded
 
 ### 13.2 重试策略
 
-| 错误类别 | 策略 |
-|---|---|
-| 网络超时、对象存储暂时不可用 | 指数退避，最多 2-3 次 |
-| 页面 403、验证码、登录 | 不做无限重试，直接 needs_review |
-| Excel 字段缺失、费用规则冲突 | 不重试，生成 issue |
-| LLM 限流/暂时错误 | 退避重试，最多 2 次；输出必须通过 Schema |
-| 输出文件写入失败 | 临时文件 + 原子替换，最多 2 次 |
-| 付款模板头不匹配、对账失败 | 立即 failed，禁止自动重试 |
+| 错误类别                     | 策略                                     |
+| ---------------------------- | ---------------------------------------- |
+| 网络超时、对象存储暂时不可用 | 指数退避，最多 2-3 次                    |
+| 页面 403、验证码、登录       | 不做无限重试，直接 needs_review          |
+| Excel 字段缺失、费用规则冲突 | 不重试，生成 issue                       |
+| LLM 限流/暂时错误            | 退避重试，最多 2 次；输出必须通过 Schema |
+| 输出文件写入失败             | 临时文件 + 原子替换，最多 2 次           |
+| 付款模板头不匹配、对账失败   | 立即 failed，禁止自动重试                |
 
 ### 13.3 幂等
 
@@ -1053,11 +1051,11 @@ NodeStarted -> Progress -> NodeSucceeded
 
 导出前执行三方对账：
 
-~~~text
+```text
 sum(QuoteDetail.total_amount where settlement_eligible)
   == sum(MonthlySummary.summary_total)
   == sum(PaymentRow.payable_amount)
-~~~
+```
 
 数量、分组键、账户引用和规则引用同时对账。任何不一致均写 critical issue 并阻止 payment_eligible。
 
@@ -1065,12 +1063,12 @@ sum(QuoteDetail.total_amount where settlement_eligible)
 
 ### 14.1 数据分级
 
-| 等级 | 数据 | 处理 |
-|---|---|---|
-| L0 | 节点状态、计数、耗时 | 可被普通状态查询读取 |
-| L1 | 媒体名、平台、标题、URL | 按租户授权读取 |
-| L2 | 户名、电话、粉丝量 | 默认掩码，业务角色可读 |
-| L3 | 身份证、银行卡、付款文件 | 加密存储，finance_export 才可导出 |
+| 等级 | 数据                     | 处理                              |
+| ---- | ------------------------ | --------------------------------- |
+| L0   | 节点状态、计数、耗时     | 可被普通状态查询读取              |
+| L1   | 媒体名、平台、标题、URL  | 按租户授权读取                    |
+| L2   | 户名、电话、粉丝量       | 默认掩码，业务角色可读            |
+| L3   | 身份证、银行卡、付款文件 | 加密存储，finance_export 才可导出 |
 
 ### 14.2 外部页面访问
 
@@ -1091,7 +1089,7 @@ sum(QuoteDetail.total_amount where settlement_eligible)
 
 建议最终实现为以下结构：
 
-~~~text
+```text
 src/workflow/
   __init__.py
   config.py                  # 中文注释：环境变量和运行配置
@@ -1123,7 +1121,7 @@ tests/
   integration/
   contract/
   e2e/
-~~~
+```
 
 目录只是建议，第一版可以从当前项目的最小模块开始，但领域模型、节点 ID、事件字段和 MCP 工具名称应保持稳定。
 
@@ -1179,16 +1177,16 @@ tests/
 
 ### 16.5 POC 验收标准
 
-| 类别 | 通过标准 |
-|---|---|
-| 完整性 | 主流程节点全部可运行，能够产出 3 个结果表、异常清单和运行报告 |
+| 类别   | 通过标准                                                                    |
+| ------ | --------------------------------------------------------------------------- |
+| 完整性 | 主流程节点全部可运行，能够产出 3 个结果表、异常清单和运行报告               |
 | 可追溯 | 任一付款行可反查 MonthlySummary、QuoteDetail、PublicationRecord、原始单元格 |
-| 正确性 | 金额/数量三方对账通过，费用规则引用明确 |
-| 可恢复 | 节点失败可查询、可重试，进程重启后可从检查点继续 |
-| 可查询 | MCP 可查询运行、节点、issue、日志和 artifact |
-| 安全性 | 普通状态接口不泄露身份证、银行卡和完整手机号 |
-| 无交互 | 图内没有等待人工输入的节点，异常通过外部 issue API 闭环 |
-| 兼容性 | 6-付款模板的固定头、列顺序、公式和批次号规则不被破坏 |
+| 正确性 | 金额/数量三方对账通过，费用规则引用明确                                     |
+| 可恢复 | 节点失败可查询、可重试，进程重启后可从检查点继续                            |
+| 可查询 | MCP 可查询运行、节点、issue、日志和 artifact                                |
+| 安全性 | 普通状态接口不泄露身份证、银行卡和完整手机号                                |
+| 无交互 | 图内没有等待人工输入的节点，异常通过外部 issue API 闭环                     |
+| 兼容性 | 6-付款模板的固定头、列顺序、公式和批次号规则不被破坏                        |
 
 ## 17. 实施顺序
 
