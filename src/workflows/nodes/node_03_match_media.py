@@ -3,9 +3,9 @@
 from typing import Dict, Any, Optional
 from datetime import datetime
 
-from workflow.nodes.base import BaseNode
-from workflow.models import WorkflowContext, NodeOutput, NodeMetrics, Issue
-from workflow.services import get_logger, ExcelService
+from workflows.nodes.base import BaseNode
+from workflows.models import WorkflowContext, NodeOutput, NodeMetrics, Issue
+from workflows.services import get_logger, ExcelService
 
 logger = get_logger()
 

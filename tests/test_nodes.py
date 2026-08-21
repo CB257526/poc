@@ -2,12 +2,12 @@
 
 import pytest
 from datetime import datetime
-from workflow.models import WorkflowContext
-from workflow.nodes.node_02_fill_publication import Node02FillPublication
-from workflow.nodes.node_03_match_media import Node03MatchMedia
-from workflow.nodes.node_04_match_account import Node04MatchAccount
-from workflow.nodes.node_05_calculate_fee import Node05CalculateFee
-from workflow.nodes.node_06_generate_payment import Node06GeneratePayment
+from workflows.models import WorkflowContext
+from workflows.nodes.node_02_fill_publication import Node02FillPublication
+from workflows.nodes.node_03_match_media import Node03MatchMedia
+from workflows.nodes.node_04_match_account import Node04MatchAccount
+from workflows.nodes.node_05_calculate_fee import Node05CalculateFee
+from workflows.nodes.node_06_generate_payment import Node06GeneratePayment
 
 
 @pytest.fixture

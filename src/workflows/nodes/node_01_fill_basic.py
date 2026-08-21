@@ -5,9 +5,9 @@ import uuid
 from typing import Dict, Any, List, Tuple
 from urllib.parse import urlparse
 
-from workflow.nodes.base import BaseNode
-from workflow.models import WorkflowContext, NodeOutput, Issue
-from workflow.services import get_logger
+from workflows.nodes.base import BaseNode
+from workflows.models import WorkflowContext, NodeOutput, Issue
+from workflows.services import get_logger
 
 logger = get_logger()
 
@@ -84,32 +84,37 @@ class Node01FillBasic(BaseNode):
         # === 1. 解析每条记录中的链接 ===
         parsed_records = []
         for record in raw_records:
-            url = record.get("链接")
-            if not url:
+            links = record.get("链接")
+            if not links:
                 continue
 
-            # 提取URL
-            urls = self._extract_urls_from_text(str(url))
+            # 兼容字符串与列表两种形态（新结构下为列表）
+            if isinstance(links, str):
+                links = [links]
 
-            if not urls:
-                issues.append(Issue(
-                    level="warning",
-                    code="NO_URL_FOUND",
-                    message=f"无法从文本中提取URL: {url}",
-                    node_id=self.node_id,
-                    record_id=record.get("id")
-                ))
-                continue
+            for link_text in links:
+                # 提取URL（一条链接文本可能包含多个URL）
+                urls = self._extract_urls_from_text(str(link_text))
 
-            # 为每个URL创建一条记录
-            for link_text, extracted_url in urls:
-                parsed_record = {
-                    **record,  # 继承原始数据
-                    "raw_link_text": link_text,
-                    "url": extracted_url,
-                    "platform": None,  # 下一步填充
-                }
-                parsed_records.append(parsed_record)
+                if not urls:
+                    issues.append(Issue(
+                        level="warning",
+                        code="NO_URL_FOUND",
+                        message=f"无法从文本中提取URL: {link_text}",
+                        node_id=self.node_id,
+                        record_id=record.get("id")
+                    ))
+                    continue
+
+                # 为每个URL创建一条记录
+                for raw_text, extracted_url in urls:
+                    parsed_record = {
+                        **record,  # 继承原始数据
+                        "raw_link_text": raw_text,
+                        "url": extracted_url,
+                        "platform": None,  # 下一步填充
+                    }
+                    parsed_records.append(parsed_record)
 
         logger.info("urls_extracted", total_urls=len(parsed_records))
 

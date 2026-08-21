@@ -4,16 +4,16 @@ import time
 from datetime import datetime
 from langchain_core.runnables import RunnableSequence
 
-from workflow.models import WorkflowContext
-from workflow.nodes.base import WorkflowTerminated
-from workflow.nodes.node_00_input import Node00Input
-from workflow.nodes.node_01_fill_basic import Node01FillBasic
-from workflow.nodes.node_02_fill_publication import Node02FillPublication
-from workflow.nodes.node_03_match_media import Node03MatchMedia
-from workflow.nodes.node_04_match_account import Node04MatchAccount
-from workflow.nodes.node_05_calculate_fee import Node05CalculateFee
-from workflow.nodes.node_06_generate_payment import Node06GeneratePayment
-from workflow.services import get_logger
+from workflows.models import WorkflowContext
+from workflows.nodes.base import WorkflowTerminated
+from workflows.nodes.node_00_input import Node00Input
+from workflows.nodes.node_01_fill_basic import Node01FillBasic
+from workflows.nodes.node_02_fill_publication import Node02FillPublication
+from workflows.nodes.node_03_match_media import Node03MatchMedia
+from workflows.nodes.node_04_match_account import Node04MatchAccount
+from workflows.nodes.node_05_calculate_fee import Node05CalculateFee
+from workflows.nodes.node_06_generate_payment import Node06GeneratePayment
+from workflows.services import get_logger
 
 logger = get_logger()
 

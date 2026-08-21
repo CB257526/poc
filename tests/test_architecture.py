@@ -2,11 +2,11 @@
 
 import pytest
 import os
-from workflow.models import WorkflowContext, Issue, NodeMetrics, NodeOutput
-from workflow.nodes.base import BaseNode, WorkflowTerminated
-from workflow.nodes.node_00_input import Node00Input
-from workflow.nodes.node_01_fill_basic import Node01FillBasic
-from workflow.workflow import create_workflow, run_workflow
+from workflows.models import WorkflowContext, Issue, NodeMetrics, NodeOutput
+from workflows.nodes.base import BaseNode, WorkflowTerminated
+from workflows.nodes.node_00_input import Node00Input
+from workflows.nodes.node_01_fill_basic import Node01FillBasic
+from workflows.workflow_run import create_workflow, run_workflow
 
 
 def test_workflow_context():
@@ -270,7 +270,7 @@ def test_node_00_input_file_not_found():
 
 def test_node_01_platform_identification():
     """测试节点1：平台识别"""
-    from workflow.nodes.node_01_fill_basic import Node01FillBasic
+    from workflows.nodes.node_01_fill_basic import Node01FillBasic
 
     node = Node01FillBasic()
 
@@ -284,7 +284,7 @@ def test_node_01_platform_identification():
 
 def test_node_01_url_extraction():
     """测试节点1：URL提取"""
-    from workflow.nodes.node_01_fill_basic import Node01FillBasic
+    from workflows.nodes.node_01_fill_basic import Node01FillBasic
 
     node = Node01FillBasic()
 

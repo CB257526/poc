@@ -4,9 +4,9 @@ from typing import Dict, Any, Optional, List
 from datetime import datetime
 from decimal import Decimal
 
-from workflow.nodes.base import BaseNode
-from workflow.models import WorkflowContext, NodeOutput, NodeMetrics, Issue
-from workflow.services import get_logger, ExcelService
+from workflows.nodes.base import BaseNode
+from workflows.models import WorkflowContext, NodeOutput, NodeMetrics, Issue
+from workflows.services import get_logger, ExcelService
 
 logger = get_logger()
 
@@ -94,13 +94,16 @@ class Node05CalculateFee(BaseNode):
                     record["费用"] = fee
 
                     # 生成约稿明细行
+                    detail_link = record.get("primary_link") or record.get("链接")
+                    if isinstance(detail_link, list):
+                        detail_link = detail_link[0] if detail_link else None
                     detail_row = {
                         "id": record_id,
                         "媒体": media_name,
                         "平台": record.get("平台"),
                         "标题": title,
                         "发布日期": record.get("发布日期"),
-                        "链接": record.get("链接"),
+                        "链接": detail_link,
                         "媒体等级": media_level,
                         "文章类型": article_type,
                         "费用": fee,

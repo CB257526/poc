@@ -1,8 +1,8 @@
 """节点0: 输入验证 - 新版本"""
 
-from workflow.nodes.base import BaseNode
-from workflow.models import WorkflowContext, NodeOutput, Issue
-from workflow.services import ExcelService, get_logger
+from workflows.nodes.base import BaseNode
+from workflows.models import WorkflowContext, NodeOutput, Issue
+from workflows.services import ExcelService, get_logger
 import os
 
 logger = get_logger()
@@ -75,13 +75,15 @@ class Node00Input(BaseNode):
 
         # === 3. 读取输入文件 ===
         try:
-            rows = excel.read_sheet(context.input_file, sheet_name="Sheet1")
+            # 1-链接.xlsx 是无表头的"主题-媒体-链接"分层表，用专用方法解析
+            rows = excel.read_link_sheet(context.input_file, sheet_name="Sheet1")
+            print(f'输入表格：{rows[:5]}')
             if not rows:
                 issues.append(Issue(
                     level="critical",
                     code="EMPTY_INPUT_FILE",
                     message="输入文件为空",
-                    node_id=self.node_id
+                    node_id=self.node_id 
                 ))
                 return self._create_failure_output(
                     processed_count=0,
@@ -106,10 +108,11 @@ class Node00Input(BaseNode):
 
         # === 4. 初始化记录结构 ===
         records = []
+
         for idx, row in enumerate(rows):
             record_id = f"rec_{idx + 1:04d}"
 
-            # 验证必需字段
+            # 验证必需字段（链接为列表，空列表视为缺失）
             if not row.get("链接"):
                 issues.append(Issue(
                     level="error",
@@ -120,11 +123,11 @@ class Node00Input(BaseNode):
                 ))
                 continue
 
-            # 创建记录
+            # 创建记录（read_link_sheet 已按媒体聚合，每条记录即一个媒体块，
+            # 链接为列表，供 Node1 逐条解析并合并主链接+同步链接）
             record = {
+                **row,
                 "id": record_id,
-                "row_number": idx + 2,  # Excel 行号（从2开始）
-                **row  # 原始数据
             }
 
             records.append(record)

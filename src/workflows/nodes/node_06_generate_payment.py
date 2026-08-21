@@ -5,9 +5,9 @@ from datetime import datetime
 from collections import defaultdict
 import os
 
-from workflow.nodes.base import BaseNode
-from workflow.models import WorkflowContext, NodeOutput, NodeMetrics, Issue
-from workflow.services import get_logger, ExcelService
+from workflows.nodes.base import BaseNode
+from workflows.models import WorkflowContext, NodeOutput, NodeMetrics, Issue
+from workflows.services import get_logger, ExcelService
 
 logger = get_logger()
 

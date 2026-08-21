@@ -50,3 +50,6 @@ htmlcov/
 
 # UV
 .python-version
+
+
+.cbagent

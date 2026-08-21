@@ -5,8 +5,8 @@ from typing import Optional
 from langchain_core.runnables import Runnable
 import time
 
-from workflow.models import WorkflowContext, NodeOutput, NodeMetrics, Issue
-from workflow.services import get_logger
+from workflows.models import WorkflowContext, NodeOutput, NodeMetrics, Issue
+from workflows.services import get_logger
 
 logger = get_logger()
 

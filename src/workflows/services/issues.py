@@ -1,7 +1,7 @@
 """问题/错误收集器"""
 
 from typing import List, Dict, Any, Literal, Optional
-from workflow.models import Issue
+from workflows.models import Issue
 import structlog
 
 logger = structlog.get_logger()

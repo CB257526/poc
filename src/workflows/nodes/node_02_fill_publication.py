@@ -4,9 +4,9 @@ import re
 from typing import Dict, Any, Optional
 from datetime import datetime
 
-from workflow.nodes.base import BaseNode
-from workflow.models import WorkflowContext, NodeOutput, NodeMetrics, Issue
-from workflow.services import get_logger, ExcelService
+from workflows.nodes.base import BaseNode
+from workflows.models import WorkflowContext, NodeOutput, NodeMetrics, Issue
+from workflows.services import get_logger, ExcelService
 
 logger = get_logger()
 
@@ -57,8 +57,10 @@ class Node02FillPublication(BaseNode):
             record_id = record.get("id", "unknown")
 
             try:
-                # 获取链接用于匹配
-                link = record.get("链接")
+                # 获取链接用于匹配：优先用 Node1 识别的主链接，回退到链接列表首条
+                link = record.get("primary_link") or record.get("链接")
+                if isinstance(link, list):
+                    link = link[0] if link else None
                 if not link:
                     issues.append(Issue(
                         level="error",
