@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from datetime import datetime
 
-from workflow.workflow_new import run_workflow
+from workflow.workflow import run_workflow
 from workflow.services import get_logger
 
 logger = get_logger()

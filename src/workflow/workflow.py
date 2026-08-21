@@ -1,4 +1,4 @@
-"""工作流定义 - 基于 LangChain"""
+"""工作流定义"""
 
 import time
 from datetime import datetime
@@ -8,6 +8,11 @@ from workflow.models import WorkflowContext
 from workflow.nodes.base import WorkflowTerminated
 from workflow.nodes.node_00_input import Node00Input
 from workflow.nodes.node_01_fill_basic import Node01FillBasic
+from workflow.nodes.node_02_fill_publication import Node02FillPublication
+from workflow.nodes.node_03_match_media import Node03MatchMedia
+from workflow.nodes.node_04_match_account import Node04MatchAccount
+from workflow.nodes.node_05_calculate_fee import Node05CalculateFee
+from workflow.nodes.node_06_generate_payment import Node06GeneratePayment
 from workflow.services import get_logger
 
 logger = get_logger()
@@ -26,12 +31,11 @@ def create_workflow() -> RunnableSequence:
     return (
         Node00Input()
         | Node01FillBasic()
-        # 后续节点：
-        # | Node02FillPublication()
-        # | Node03MatchMedia()
-        # | Node04MatchAccount()
-        # | Node05CalculateFee()
-        # | Node06GeneratePayment()
+        | Node02FillPublication()
+        | Node03MatchMedia()
+        | Node04MatchAccount()
+        | Node05CalculateFee()
+        | Node06GeneratePayment()
     )
 
 

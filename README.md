@@ -87,14 +87,20 @@ src/workflow/
 ├── nodes/
 │   ├── base.py            # BaseNode 基类
 │   ├── node_00_input.py   # 节点0: 输入验证
-│   └── node_01_fill_basic.py  # 节点1: 填写基础信息
+│   ├── node_01_fill_basic.py      # 节点1: 填写基础信息
+│   ├── node_02_fill_publication.py # 节点2: 完善发布信息
+│   ├── node_03_match_media.py     # 节点3: 匹配媒体库
+│   ├── node_04_match_account.py   # 节点4: 匹配账户信息
+│   ├── node_05_calculate_fee.py   # 节点5: 计算费用
+│   └── node_06_generate_payment.py # 节点6: 生成付款表
 ├── workflow.py            # 工作流定义和执行
 ├── config.py              # 配置管理
 ├── services/              # 基础服务（Excel、日志、存储）
 └── __main__.py            # 命令行入口
 
 tests/
-└── test_architecture.py   # 架构测试（14个测试全部通过）
+├── test_architecture.py   # 架构测试（14个测试）
+└── test_nodes.py          # 节点测试（6个测试）
 ```
 
 ## 🚀 快速开始
@@ -130,11 +136,54 @@ if context.has_critical_errors():
 ### 3. 运行测试
 
 ```bash
-pytest tests/test_architecture.py -v
-# 14 passed ✅
+pytest tests/ -v
+# 20 passed ✅
 ```
 
 ## 🔧 开发指南
+
+### 工作流节点说明
+
+完整的工作流包含7个节点：
+
+1. **Node00Input** - 输入验证
+   - 验证输入文件存在且格式正确
+   - 验证参考表格文件存在
+   - 读取输入Excel并初始化records
+
+2. **Node01FillBasic** - 填写基础信息
+   - 解析链接，提取URL
+   - 识别平台（知乎、微博、B站等）
+   - 按媒体分组，区分主链接和同步链接
+   - 检查重复链接
+
+3. **Node02FillPublication** - 完善发布信息
+   - 从约稿资料表中匹配标题、发布日期
+   - 提取文章类型和截图路径
+   - 验证必填字段
+
+4. **Node03MatchMedia** - 匹配媒体库
+   - 从媒体库表中匹配媒体等级
+   - 获取粉丝数信息
+   - 验证媒体信息完整性
+
+5. **Node04MatchAccount** - 匹配账户信息
+   - 从账户信息表中匹配付款信息
+   - 包括收款方、开户行、账号、联系方式
+   - 验证账户信息完整性
+
+6. **Node05CalculateFee** - 计算费用
+   - 从费用表中读取费用规则
+   - 根据媒体等级和文章类型计算费用
+   - 生成约稿明细数据
+
+7. **Node06GeneratePayment** - 生成付款表
+   - 按月度、按收款方汇总费用
+   - 生成月度汇总表
+   - 生成包含3个Sheet的Excel文件：
+     - 付款汇总（按收款方）
+     - 约稿明细（所有记录）
+     - 月度汇总（按月份）
 
 ### 添加新节点
 
