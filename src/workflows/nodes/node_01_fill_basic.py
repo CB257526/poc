@@ -246,8 +246,16 @@ class Node01FillBasic(BaseNode):
                 result_records.append(record)
 
             else:
-                # 多个链接，第一个作为主链接
-                primary = group[0]
+                # 多个链接，按优先级选择主链接：知乎 > 微博 > 第一个
+                zhihu_link = next((r for r in group if r["platform"] == "知乎"), None)
+                weibo_link = next((r for r in group if r["platform"] == "微博"), None)
+
+                if zhihu_link:
+                    primary = zhihu_link
+                elif weibo_link:
+                    primary = weibo_link
+                else:
+                    primary = group[0]
 
                 # 其他是同步链接
                 sync_links = [
@@ -256,7 +264,7 @@ class Node01FillBasic(BaseNode):
                         "platform": r["platform"],
                         "raw_text": r.get("raw_link_text", "")
                     }
-                    for r in group[1:]
+                    for r in group if r != primary
                 ]
 
                 # 合并记录

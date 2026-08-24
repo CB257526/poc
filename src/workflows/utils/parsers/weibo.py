@@ -22,11 +22,21 @@ class WeiboParser(BaseParser):
         """解析微博页面"""
         await self.wait_for_content(page)
 
-        # 标题：从<title>去除"- 微博"后缀
-        title = await self._safe_text(page, "title")
+        # 标题：从微博正文提取
+        title = await self._safe_text(page, '[class*="_wbtext_"]')
+        if not title:
+            # 降级方案：尝试其他选择器
+            title = await self._safe_text(page, '[class*="_ogText_"]')
+        if not title:
+            title = await self._safe_text(page, 'article [class*="text"]')
+
+        # 清理标题：移除尾部的"微博视频"等后缀
         if title:
-            title = title.replace(" - 微博", "").replace("微博正文 - 微博", "").strip()
-        
+            title = title.replace(" ​​​", "").strip()
+            # 移除"xxx的微博视频"后缀
+            import re
+            title = re.sub(r'\s+\S+的微博视频$', '', title)
+
         # 发布日期：._time_xxx class，格式 "26-1-22 12:33"
         publish_date = await self._extract_date(page)
 
