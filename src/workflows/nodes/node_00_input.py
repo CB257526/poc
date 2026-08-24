@@ -3,9 +3,28 @@
 from workflows.nodes.base import BaseNode
 from workflows.models import WorkflowContext, NodeOutput, Issue
 from workflows.services import ExcelService, get_logger
+from typing import Any, Dict, List, Optional, Tuple
+from urllib.parse import urlparse, parse_qsl
 import os
+import re
 
 logger = get_logger()
+
+# 链接归一化时忽略的查询参数（分享/埋点参数，不参与内容标识）
+# 这些参数只影响来源统计，同一篇内容多次分享会产生不同的值
+TRACKING_PARAMS = {
+    "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content",
+    "utm_psn", "utm_id",
+    "share_code", "share_token", "share_did", "share_uid", "share_source",
+    "shp1", "timestamp", "req_id_new", "chn_id", "category_new",
+    "module_name", "tt_from", "upstream_biz", "use_new_style",
+    "link_source", "app", "aid", "iid",
+    "spm", "spm_id_from", "vd_source", "seid",
+    "from", "ref", "refer", "source",
+}
+
+# 从链接文本中提取 URL：排除空白与中文，避免把"知乎："这类前缀或尾部说明吃进来
+URL_PATTERN = re.compile(r'https?://[^\s一-龥]+')
 
 
 class Node00Input(BaseNode):
@@ -131,10 +150,18 @@ class Node00Input(BaseNode):
                 node_id=self.node_id
             ))
 
-        # === 5. 初始化记录结构 ===
+        # === 5. 按主题+媒体合并与去重 ===
+        # 同一主题中的同一媒体可能被用户多次填入（补链接时），需要合并+去重
+        merged_rows = self._merge_duplicate_media(rows, issues)
+
+        # 合并后的条数才是本节点实际要处理的记录数，
+        # 否则被合并掉的行会被 error_count 当成失败记录
+        processed_count = len(merged_rows)
+
+        # === 6. 初始化记录结构 ===
         records = []
 
-        for idx, row in enumerate(rows):
+        for idx, row in enumerate(merged_rows):
             record_id = f"rec_{idx + 1:04d}"
 
             # 验证必需字段（链接为列表，空列表视为缺失）
@@ -181,13 +208,200 @@ class Node00Input(BaseNode):
             issues_count=len(issues)
         )
 
-        # === 6. 返回结果 ===
+        # === 7. 返回结果 ===
         return self._create_success_output(
             processed_count=processed_count, #已处理的总记录数
             success_count=success_count, #成功处理的记录数
             data={"records": records}, #读取表内容
             issues=issues #问题列表
         )
+
+    def _merge_duplicate_media(
+        self,
+        rows: List[Dict[str, Any]],
+        issues: List[Issue]
+    ) -> List[Dict[str, Any]]:
+        """
+        合并同一主题中多次出现的同一媒体，去重链接
+
+        场景：
+        - 用户第一次填了几条链接，后来想起还有其他平台，又添一行填剩余链接
+        - 第二次填写的链接文本可能与第一次不同（如"知乎：https://..."vs"https://..."），
+          但实际 URL 相同 → 需要归一化后再判断重复
+
+        策略：
+        - 按(主题, 媒体名称)分组
+        - 合并同组的所有链接列表
+        - 对所有链接归一化 URL 后去重（保留第一次出现的原始文本）
+        - row_number 取第一次出现的位置
+
+        Args:
+            rows: read_link_sheet 的原始输出（每条记录对应一个媒体块）
+            issues: 问题列表，遇到重复会添加 warning
+
+        Returns:
+            合并去重后的记录列表
+        """
+        # 按(主题, 媒体)分组
+        groups: Dict[Tuple[Optional[str], str], List[Dict[str, Any]]] = {}
+
+        for row in rows:
+            topic = row.get("主题")
+            media = row.get("媒体")
+
+            if not media:
+                # 没有媒体名，无法分组，直接保留（后续会因缺字段报错）
+                continue
+
+            key = (topic, media)
+            if key not in groups:
+                groups[key] = []
+            groups[key].append(row)
+
+        # 合并每组
+        merged = []
+
+        for (topic, media), group_rows in groups.items():
+            if len(group_rows) == 1:
+                # 该媒体只出现一次，直接使用
+                merged.append(group_rows[0])
+                continue
+
+            # 同一主题中该媒体出现多次 → 需要合并
+            logger.info(
+                "merge_duplicate_media_within_topic",
+                topic=topic,
+                media=media,
+                occurrences=len(group_rows)
+            )
+
+            # 取第一次出现的 row_number
+            first_row_number = group_rows[0].get("row_number")
+
+            # 合并所有链接
+            all_link_texts = []
+            for r in group_rows:
+                all_link_texts.extend(r.get("链接", []))
+
+            # 去重：归一化 URL 后判断，保留第一次出现的原始文本
+            seen_normalized: Dict[str, str] = {}  # {归一化URL: 原始文本}
+            unique_links = []
+            duplicates_found = []
+
+            for link_text in all_link_texts:
+                normalized = self._normalize_url(link_text)
+
+                if not normalized:
+                    # 无法提取 URL，保留原文本（后续 Node1 会报 warning）
+                    unique_links.append(link_text)
+                    continue
+
+                if normalized in seen_normalized:
+                    # 重复链接
+                    duplicates_found.append({
+                        "original": seen_normalized[normalized],
+                        "duplicate": link_text,
+                        "normalized": normalized
+                    })
+                else:
+                    seen_normalized[normalized] = link_text
+                    unique_links.append(link_text)
+
+            # 记录去重情况
+            if duplicates_found:
+                issues.append(Issue(
+                    level="warning",
+                    code="DUPLICATE_LINKS_MERGED",
+                    message=f"合并重复媒体时发现 {len(duplicates_found)} 条重复链接已去除: {media}（主题: {topic}）",
+                    node_id=self.node_id,
+                    details={
+                        "topic": topic,
+                        "media": media,
+                        "duplicates": duplicates_found[:5]  # 最多记录5条示例
+                    }
+                ))
+
+            # 构造合并后的记录
+            merged_row = {
+                "主题": topic,
+                "媒体": media,
+                "row_number": first_row_number,
+                "链接": unique_links,
+            }
+
+            merged.append(merged_row)
+
+        return merged
+
+    def _normalize_url(self, link_text: str) -> str:
+        """
+        从链接文本中提取并归一化 URL，用于去重比较
+
+        处理：
+        1. 提取 URL（去除"知乎："前缀、引号等）
+        2. 移除分享/埋点参数（utm_*, share_*, timestamp 等）
+        3. 统一协议为 https
+        4. 去除末尾斜杠
+        5. 转小写（域名部分）
+
+        Args:
+            link_text: 原始链接文本，如"知乎：https://www.zhihu.com/..."
+
+        Returns:
+            归一化后的 URL，提取失败返回空字符串
+        """
+        # 1. 提取 URL
+        match = URL_PATTERN.search(link_text)
+        if not match:
+            return ""
+
+        url = match.group(0)
+
+        # 清理末尾可能误匹配的标点
+        url = url.rstrip(".,;!?。，；！？'\"“”‘’")
+
+        try:
+            # 2. 解析
+            parsed = urlparse(url)
+
+            # 3. 过滤查询参数（移除追踪参数）
+            if parsed.query:
+                params = parse_qsl(parsed.query, keep_blank_values=True)
+                # 保留非追踪参数；空参数名（如懂车帝分享链的 "?=" ）无意义，一并丢弃
+                filtered_params = [
+                    (k, v) for k, v in params
+                    if k and k not in TRACKING_PARAMS
+                ]
+                # 重建 query（排序以保证一致性）
+                filtered_query = "&".join(
+                    f"{k}={v}" for k, v in sorted(filtered_params)
+                )
+            else:
+                filtered_query = ""
+
+            # 4. 统一协议为 https
+            scheme = "https"
+
+            # 5. 域名小写
+            netloc = parsed.netloc.lower()
+
+            # 6. 路径保持原样（可能包含大小写敏感的 ID）
+            path = parsed.path.rstrip("/")  # 去除末尾斜杠
+
+            # 7. 重建 URL
+            normalized = f"{scheme}://{netloc}{path}"
+            if filtered_query:
+                normalized += f"?{filtered_query}"
+
+            return normalized
+
+        except Exception as e:
+            logger.warning(
+                "url_normalize_failed",
+                link_text=link_text,
+                error=str(e)
+            )
+            return ""
 
     @staticmethod
     def _normalize_name(name: str) -> str:
