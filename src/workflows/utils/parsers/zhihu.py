@@ -1,11 +1,10 @@
 """知乎解析器"""
 
 import re
-import json
 from typing import Dict, Any
 from playwright.async_api import Page
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 from .base import BaseParser
 from workflows.services import get_logger
@@ -26,7 +25,7 @@ class ZhihuParser(BaseParser):
         # 标题：从 h1 或 title 标签
         title = await self._extract_title(page)
 
-        # 发布日期：从JSON数据中提取
+        # 发布日期：从页面文本中提取
         publish_date = await self._extract_date(page, url)
 
         # 文章类型：判断是视频还是图文
@@ -70,72 +69,67 @@ class ZhihuParser(BaseParser):
         except Exception:
             return ""
 
-    async def _extract_date(self, page: Page, url: str) -> str:
-        """从页面JSON数据中提取发布日期"""
-        try:
-            # 获取页面HTML
-            html = await page.content()
-            
-            # 查找 <script id="js-initialData"> 中的JSON
-            match = re.search(r'<script id="js-initialData"[^>]*>(.*?)</script>', html, re.DOTALL)
-            if match:
-                json_str = match.group(1)
-                data = json.loads(json_str)
-                
-                # 根据URL类型提取不同的时间
-                if "/answer/" in url:
-                    # 答案页面：从answers中提取
-                    answer_id = self._extract_answer_id(url)
-                    if answer_id:
-                        answers = data.get("initialState", {}).get("entities", {}).get("answers", {})
-                        answer_data = answers.get(answer_id, {})
-                        created_time = answer_data.get("createdTime")
-                        if created_time:
-                            dt = datetime.fromtimestamp(int(created_time))
-                            return dt.strftime("%Y-%m-%d")
-                
-                elif "/question/" in url:
-                    # 问题页面：从questions中提取
-                    question_id = self._extract_question_id(url)
-                    if question_id:
-                        questions = data.get("initialState", {}).get("entities", {}).get("questions", {})
-                        question_data = questions.get(question_id, {})
-                        created = question_data.get("created")
-                        if created:
-                            dt = datetime.fromtimestamp(int(created))
-                            return dt.strftime("%Y-%m-%d")
-                
-                elif "/zvideo/" in url:
-                    # 视频页面：从zvideos中提取
-                    video_id = self._extract_zvideo_id(url)
-                    if video_id:
-                        zvideos = data.get("initialState", {}).get("entities", {}).get("zvideos", {})
-                        video_data = zvideos.get(video_id, {})
-                        created_at = video_data.get("createdAt")
-                        if created_at:
-                            dt = datetime.fromtimestamp(int(created_at))
-                            return dt.strftime("%Y-%m-%d")
-            
-        except Exception as e:
-            logger.warning("zhihu_date_extract_failed", error=str(e))
-
-        # Fallback: 当前日期
-        return datetime.now().strftime("%Y-%m-%d")
-
     def _extract_answer_id(self, url: str) -> str:
         """从URL提取答案ID"""
         match = re.search(r'/answer/(\d+)', url)
         return match.group(1) if match else ""
 
-    def _extract_question_id(self, url: str) -> str:
-        """从URL提取问题ID"""
-        match = re.search(r'/question/(\d+)', url)
-        return match.group(1) if match else ""
+    def _parse_iso_date(self, content: str) -> str:
+        """将 meta 中的 ISO 时间（UTC）转为北京时间日期 YYYY-MM-DD"""
+        if not content:
+            return ""
+        try:
+            dt = datetime.fromisoformat(content.replace("Z", "+00:00"))
+            return dt.astimezone(timezone(timedelta(hours=8))).strftime("%Y-%m-%d")
+        except ValueError:
+            return ""
 
-    def _extract_zvideo_id(self, url: str) -> str:
-        """从URL提取视频ID"""
-        match = re.search(r'/zvideo/(\d+)', url)
-        return match.group(1) if match else ""
+    async def _extract_date(self, page: Page, url: str) -> str:
+        """提取发布日期"""
+        try:
+            # 1. 问答页：定位到URL对应的那条回答，读取其 dateCreated meta
+            #    （问题页有多条回答，必须按 answer id 定位，否则会取到别人的回答时间）
+            answer_id = self._extract_answer_id(url)
+            if answer_id:
+                meta = await page.query_selector(
+                    f'[name="{answer_id}"] meta[itemprop="dateCreated"]'
+                )
+                if meta:
+                    content = await meta.get_attribute("content")
+                    date = self._parse_iso_date(content)
+                    if date:
+                        return date
+
+            # 2. 通用 meta：文章页/视频页
+            for selector in (
+                'meta[itemprop="dateCreated"]',
+                'meta[property="article:published_time"]',
+            ):
+                meta = await page.query_selector(selector)
+                if meta:
+                    content = await meta.get_attribute("content")
+                    date = self._parse_iso_date(content)
+                    if date:
+                        return date
+
+            # 3. 页面可见文本："发布于 YYYY-MM-DD"（视频页走这条）
+            body_text = await page.text_content("body")
+            match = re.search(r'(?:发布于|编辑于)\s*(\d{4})-(\d{1,2})-(\d{1,2})', body_text)
+            if match:
+                year, month, day = match.groups()
+                return f"{year}-{month.zfill(2)}-{day.zfill(2)}"
+
+            # 4. "YYYY年MM月DD日"格式
+            match = re.search(r'(\d{4})年(\d{1,2})月(\d{1,2})日', body_text)
+            if match:
+                year, month, day = match.groups()
+                return f"{year}-{month.zfill(2)}-{day.zfill(2)}"
+
+        except Exception as e:
+            logger.warning("zhihu_date_extract_failed", error=str(e))
+
+        # Fallback: 当前日期
+        return datetime.now().strftime("%Y-%m-%d")
 
     async def _determine_article_type(self, page: Page, url: str) -> str:
         """判断文章类型"""
