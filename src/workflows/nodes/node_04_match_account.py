@@ -1,6 +1,6 @@
 """节点4: 匹配账户信息"""
 
-from typing import Dict, Any, Optional
+from typing import Dict, Any, List, Optional
 from datetime import datetime
 
 from workflows.nodes.base import BaseNode
@@ -50,16 +50,25 @@ class Node04MatchAccount(BaseNode):
             metrics.error_count = len(context.records)
             return NodeOutput.create_failure(metrics=metrics, issues=issues)
 
+        account_index = self._build_account_index()
+
         # 处理每条记录
         for record in context.records:
             metrics.processed_count += 1
             record_id = record.get("id", "unknown")
 
             try:
+                # 节点3未通过的记录不能继续匹配账户。
+                if record.get("processable") is False:
+                    record["account_match_status"] = "skipped"
+                    continue
+
                 # 获取媒体名称用于匹配账户
                 media_name = record.get("媒体")
 
                 if not media_name:
+                    record["account_match_status"] = "not_found"
+                    record["processable"] = False
                     issues.append(Issue(
                         level="error",
                         code="MISSING_MEDIA_NAME",
@@ -70,8 +79,22 @@ class Node04MatchAccount(BaseNode):
                     metrics.error_count += 1
                     continue
 
-                # 从账户信息表中匹配
-                matched = self._match_account_info(media_name)
+                candidates = account_index.get(self._normalize_name(media_name), [])
+                if len(candidates) > 1:
+                    record["account_match_status"] = "duplicate"
+                    record["processable"] = False
+                    issues.append(Issue(
+                        level="error",
+                        code="DUPLICATE_ACCOUNT_MEDIA",
+                        message=f"账户信息表存在重复媒体，无法自动选择账户: {media_name}",
+                        node_id=self.node_id,
+                        record_id=record_id,
+                        details={"media": media_name, "candidate_count": len(candidates)}
+                    ))
+                    metrics.error_count += 1
+                    continue
+
+                matched = candidates[0] if candidates else None
 
                 if matched:
                     # 填充账户信息（列名对齐「账户信息」表头：户名/开户行信息/银行卡账号）
@@ -96,25 +119,35 @@ class Node04MatchAccount(BaseNode):
                     record["身份证"] = (
                         matched.get("身份证") or matched.get("身份证号")
                     )
+                    record["开户行所在城市"] = (
+                        matched.get("开户行所在城市")
+                        or matched.get("开户城市")
+                    )
 
-                    # 验证必填字段
+                    # 只校验付款及约稿输出所需字段是否存在，不重复核验其真实性。
                     missing_fields = []
-                    if not record.get("收款方"):
-                        missing_fields.append("收款方")
-                    if not record.get("账号"):
-                        missing_fields.append("账号")
+                    for field_name in (
+                        "收款方", "身份证", "账号", "联系方式", "开户行", "开户行所在城市"
+                    ):
+                        if not record.get(field_name):
+                            missing_fields.append(field_name)
 
                     if missing_fields:
+                        record["account_match_status"] = "incomplete"
+                        record["processable"] = False
                         issues.append(Issue(
-                            level="warning",
+                            level="error",
                             code="MISSING_ACCOUNT_FIELDS",
                             message=f"账户信息不完整，缺少: {', '.join(missing_fields)}",
                             node_id=self.node_id,
                             record_id=record_id,
                             details={"missing_fields": missing_fields}
                         ))
-
-                    metrics.success_count += 1
+                        metrics.error_count += 1
+                    else:
+                        record["account_match_status"] = "matched"
+                        record["processable"] = True
+                        metrics.success_count += 1
                     logger.debug(
                         "account_matched",
                         record_id=record_id,
@@ -123,8 +156,10 @@ class Node04MatchAccount(BaseNode):
                     )
                 else:
                     # 未匹配到账户
+                    record["account_match_status"] = "not_found"
+                    record["processable"] = False
                     issues.append(Issue(
-                        level="warning",
+                        level="error",
                         code="ACCOUNT_NOT_FOUND",
                         message=f"未在账户信息表中找到: {media_name}",
                         node_id=self.node_id,
@@ -166,6 +201,21 @@ class Node04MatchAccount(BaseNode):
             issues=issues
         )
 
+    def _build_account_index(self) -> Dict[str, List[Dict[str, Any]]]:
+        """按标准化媒体名称建立账户索引，并保留重名记录供校验。"""
+        account_index: Dict[str, List[Dict[str, Any]]] = {}
+        for row in self._account_data or []:
+            row_media = (
+                row.get("媒体")
+                or row.get("媒体名称")
+                or row.get("账户关联媒体")
+            )
+            if not row_media:
+                continue
+            key = self._normalize_name(row_media)
+            account_index.setdefault(key, []).append(row)
+        return account_index
+
     def _match_account_info(self, media_name: str) -> Optional[Dict[str, Any]]:
         """
         从账户信息表中匹配账户信息
@@ -179,28 +229,8 @@ class Node04MatchAccount(BaseNode):
         if not self._account_data:
             return None
 
-        # 标准化媒体名称
-        normalized_name = self._normalize_name(media_name)
-
-        # 尝试匹配
-        for row in self._account_data:
-            # 尝试多个可能的列名
-            row_media = (
-                row.get("媒体") or
-                row.get("媒体名称") or
-                row.get("账户关联媒体") or
-                row.get("账号")
-            )
-
-            if not row_media:
-                continue
-
-            normalized_row_media = self._normalize_name(row_media)
-
-            if normalized_name == normalized_row_media:
-                return row
-
-        return None
+        candidates = self._build_account_index().get(self._normalize_name(media_name), [])
+        return candidates[0] if len(candidates) == 1 else None
 
     @staticmethod
     def _normalize_name(name: str) -> str:

@@ -1,6 +1,6 @@
 """节点3: 匹配媒体库"""
 
-from typing import Dict, Any, Optional
+from typing import Dict, Any, List, Optional
 from datetime import datetime
 
 from workflows.nodes.base import BaseNode
@@ -50,17 +50,21 @@ class Node03MatchMedia(BaseNode):
             metrics.error_count = len(context.records)
             return NodeOutput.create_failure(metrics=metrics, issues=issues)
 
+        # 媒体库没有“平台”字段，业务上以标准化后的媒体名称作为唯一键。
+        media_index = self._build_media_index()
+
         # 处理每条记录
         for record in context.records:
             metrics.processed_count += 1
             record_id = record.get("id", "unknown")
 
             try:
-                # 获取媒体名称和平台
+                # 获取媒体名称
                 media_name = record.get("媒体")
-                platform = record.get("平台")
 
                 if not media_name:
+                    record["media_match_status"] = "pending_confirmation"
+                    record["processable"] = False
                     issues.append(Issue(
                         level="error",
                         code="MISSING_MEDIA_NAME",
@@ -71,8 +75,23 @@ class Node03MatchMedia(BaseNode):
                     metrics.error_count += 1
                     continue
 
-                # 从媒体库中匹配
-                matched = self._match_media_info(media_name, platform)
+                # 媒体名称在媒体库中必须唯一；重名时禁止静默选择第一条。
+                candidates = media_index.get(self._normalize_name(media_name), [])
+                if len(candidates) > 1:
+                    record["media_match_status"] = "pending_confirmation"
+                    record["processable"] = False
+                    issues.append(Issue(
+                        level="error",
+                        code="DUPLICATE_MEDIA_NAME",
+                        message=f"媒体库存在重复媒体名称，无法自动匹配: {media_name}",
+                        node_id=self.node_id,
+                        record_id=record_id,
+                        details={"media": media_name, "candidate_count": len(candidates)}
+                    ))
+                    metrics.error_count += 1
+                    continue
+
+                matched = candidates[0] if candidates else None
 
                 if matched:
                     # 填充媒体等级和粉丝数（列名对齐「媒体库」表头：媒体级别/粉丝量）
@@ -87,17 +106,35 @@ class Node03MatchMedia(BaseNode):
                         or matched.get("关注数")
                     )
 
-                    # 验证必填字段
+                    # 验证节点3的必填输出字段
+                    missing_fields = []
                     if not record.get("媒体等级"):
+                        missing_fields.append("媒体等级")
                         issues.append(Issue(
-                            level="warning",
+                            level="error",
                             code="MISSING_MEDIA_LEVEL",
                             message=f"未找到媒体等级: {media_name}",
                             node_id=self.node_id,
                             record_id=record_id
                         ))
+                    if not record.get("粉丝量"):
+                        missing_fields.append("粉丝量")
+                        issues.append(Issue(
+                            level="error",
+                            code="MISSING_FAN_COUNT",
+                            message=f"未找到粉丝量: {media_name}",
+                            node_id=self.node_id,
+                            record_id=record_id
+                        ))
 
-                    metrics.success_count += 1
+                    if missing_fields:
+                        record["media_match_status"] = "incomplete"
+                        record["processable"] = False
+                        metrics.error_count += 1
+                    else:
+                        record["media_match_status"] = "matched"
+                        record["processable"] = True
+                        metrics.success_count += 1
                     logger.debug(
                         "media_matched",
                         record_id=record_id,
@@ -106,14 +143,27 @@ class Node03MatchMedia(BaseNode):
                     )
                 else:
                     # 未匹配到媒体
-                    issues.append(Issue(
-                        level="warning",
-                        code="MEDIA_NOT_FOUND",
-                        message=f"未在媒体库中找到: {media_name} ({platform})",
-                        node_id=self.node_id,
-                        record_id=record_id,
-                        details={"media": media_name, "platform": platform}
-                    ))
+                    record["media_match_status"] = "pending_confirmation"
+                    record["processable"] = False
+                    # 节点0已做过媒体库名称校验时不重复展示同一错误；
+                    # 单独运行节点3时仍保留自身的防御性校验。
+                    already_reported = any(
+                        issue.code == "MEDIA_NOT_IN_LIBRARY"
+                        and issue.record_id == record_id
+                        for issue in context.issues
+                    )
+                    if not already_reported:
+                        issues.append(Issue(
+                            level="error",
+                            code="MEDIA_NOT_FOUND",
+                            message=f"表1媒体名称无法匹配媒体库: {media_name}",
+                            node_id=self.node_id,
+                            record_id=record_id,
+                            details={
+                                "input_media_name": media_name,
+                                "requires_manual_confirmation": True
+                            }
+                        ))
                     metrics.error_count += 1
 
             except Exception as e:
@@ -149,51 +199,31 @@ class Node03MatchMedia(BaseNode):
             issues=issues
         )
 
-    def _match_media_info(self, media_name: str, platform: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    def _build_media_index(self) -> Dict[str, List[Dict[str, Any]]]:
+        """按标准化媒体名称建立索引，并保留重名记录供调用方校验。"""
+        media_index: Dict[str, List[Dict[str, Any]]] = {}
+        for row in self._media_data or []:
+            row_media = row.get("媒体") or row.get("媒体名称") or row.get("账号")
+            if not row_media:
+                continue
+            key = self._normalize_name(row_media)
+            media_index.setdefault(key, []).append(row)
+        return media_index
+
+    def _match_media_info(self, media_name: str) -> Optional[Dict[str, Any]]:
         """
         从媒体库中匹配媒体信息
 
         Args:
             media_name: 媒体名称
-            platform: 平台名称（可选，用于提高匹配精度）
-
         Returns:
-            匹配到的媒体记录，或None
+            唯一匹配到的媒体记录；未匹配或存在重名时返回None
         """
         if not self._media_data:
             return None
 
-        # 标准化媒体名称
-        normalized_name = self._normalize_name(media_name)
-
-        # 首先尝试精确匹配（媒体名 + 平台）
-        if platform:
-            for row in self._media_data:
-                row_media = row.get("媒体") or row.get("媒体名称") or row.get("账号")
-                row_platform = row.get("平台")
-
-                if not row_media:
-                    continue
-
-                normalized_row_media = self._normalize_name(row_media)
-
-                # 媒体名和平台都匹配
-                if normalized_name == normalized_row_media and row_platform == platform:
-                    return row
-
-        # 如果精确匹配失败，只按媒体名匹配
-        for row in self._media_data:
-            row_media = row.get("媒体") or row.get("媒体名称") or row.get("账号")
-
-            if not row_media:
-                continue
-
-            normalized_row_media = self._normalize_name(row_media)
-
-            if normalized_name == normalized_row_media:
-                return row
-
-        return None
+        candidates = self._build_media_index().get(self._normalize_name(media_name), [])
+        return candidates[0] if len(candidates) == 1 else None
 
     @staticmethod
     def _normalize_name(name: str) -> str:
