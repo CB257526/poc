@@ -34,17 +34,6 @@ PLATFORM_DOMAINS = {
     "autohome.com.cn": "汽车之家",
 }
 
-# 主平台优先级（数字越小优先级越高）
-PLATFORM_PRIORITY = {
-    "知乎": 1,
-    "微信公众号": 2,
-    "微信视频号": 3,
-    "微博": 4,
-    "B站": 5,
-    "抖音": 6,
-    "小红书": 7,
-}
-
 
 class Node01FillBasic(BaseNode):
     """
@@ -223,7 +212,7 @@ class Node01FillBasic(BaseNode):
         按媒体分组，区分主链接和同步链接
 
         策略：
-        - 如果一个记录ID对应多个URL，按平台优先级选择主链接
+        - 如果一个记录ID对应多个URL，第一个URL作为主链接
         - 其他链接作为同步链接
 
         Args:
@@ -257,14 +246,8 @@ class Node01FillBasic(BaseNode):
                 result_records.append(record)
 
             else:
-                # 多个链接，按优先级选择主链接
-                sorted_group = sorted(
-                    group,
-                    key=lambda r: PLATFORM_PRIORITY.get(r.get("platform", "unknown"), 999)
-                )
-
-                # 第一个是主链接
-                primary = sorted_group[0]
+                # 多个链接，第一个作为主链接
+                primary = group[0]
 
                 # 其他是同步链接
                 sync_links = [
@@ -273,7 +256,7 @@ class Node01FillBasic(BaseNode):
                         "platform": r["platform"],
                         "raw_text": r.get("raw_link_text", "")
                     }
-                    for r in sorted_group[1:]
+                    for r in group[1:]
                 ]
 
                 # 合并记录
