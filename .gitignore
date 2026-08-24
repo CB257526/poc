@@ -55,3 +55,9 @@ htmlcov/
 .cbagent
 # 工作流输出产物
 output/
+
+# 截图临时文件
+screenshots/
+
+# 网页HTML样本
+web_data/

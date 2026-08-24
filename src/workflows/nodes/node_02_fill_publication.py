@@ -1,14 +1,14 @@
-"""节点2: 完善发布信息"""
+"""节点2: 完善发布信息 - 通过网络爬取"""
 
-import re
-from typing import Dict, Any, Optional
+import asyncio
+from typing import Dict, Any, List
 from datetime import datetime
-
-from openpyxl.utils.datetime import from_excel
+from collections import defaultdict
 
 from workflows.nodes.base import BaseNode
 from workflows.models import WorkflowContext, NodeOutput, NodeMetrics, Issue
-from workflows.services import get_logger, ExcelService
+from workflows.services import get_logger
+from workflows.utils.web_scraper import scrape_publications
 
 logger = get_logger()
 
@@ -18,14 +18,13 @@ class Node02FillPublication(BaseNode):
     完善发布信息节点
 
     职责：
-    1. 从约稿资料表中匹配标题、发布日期、文章类型
-    2. 提取截图路径
+    1. 通过网络爬取获取标题、发布日期、文章类型、截图
+    2. 判断发布形式（原创/通稿）
     3. 验证必填字段
     """
 
     def __init__(self):
         super().__init__("node_02", "完善发布信息")
-        self._publication_data = None
 
     def process(self, context: WorkflowContext) -> NodeOutput:
         """处理发布信息"""
@@ -33,228 +32,142 @@ class Node02FillPublication(BaseNode):
         metrics = NodeMetrics()
         issues = []
 
-        # 加载约稿资料表（注意：必须读「约稿」sheet，默认 active 是「约稿费用合计」）
+        records = context.records
+        if not records:
+            return self._create_success_output(
+                processed_count=0,
+                success_count=0,
+                data={},
+                issues=[]
+            )
+
+        metrics.processed_count = len(records)
+
         try:
-            publication_table_path = context.get_table_path("2-约稿资料")
-            self._publication_data = ExcelService.read_sheet_as_dicts(
-                publication_table_path, sheet_name="约稿"
-            )
-            logger.info(
-                "publication_table_loaded",
-                path=publication_table_path,
-                rows=len(self._publication_data)
-            )
-        except Exception as e:
-            issue = Issue(
-                level="critical",
-                code="TABLE_LOAD_FAILED",
-                message=f"无法加载约稿资料表: {str(e)}",
-                node_id=self.node_id
-            )
-            issues.append(issue)
-            metrics.error_count = len(context.records)
-            return NodeOutput.create_failure(metrics=metrics, issues=issues)
+            # 并发爬取所有记录的主链接
+            logger.info("starting_web_scraping", count=len(records))
 
-        # 处理每条记录
-        for record in context.records:
-            metrics.processed_count += 1
-            record_id = record.get("id", "unknown")
+            records_with_scraped = asyncio.run(scrape_publications(records))
 
-            try:
-                # 获取链接用于匹配：优先用 Node1 识别的主链接，回退到链接列表首条
-                link = record.get("primary_link") or record.get("链接")
-                if isinstance(link, list):
-                    link = link[0] if link else None
-                if not link:
+            # 检查爬取结果并记录问题，同时将爬取结果映射到标准字段
+            for record in records_with_scraped:
+                record_id = record.get("id", "unknown")
+
+                if record.get("scrape_error"):
                     issues.append(Issue(
                         level="error",
-                        code="MISSING_LINK",
-                        message="记录缺少链接字段",
+                        code="SCRAPE_FAILED",
+                        message=f"爬取失败: {record['scrape_error']}",
                         node_id=self.node_id,
                         record_id=record_id
                     ))
                     metrics.error_count += 1
                     continue
 
-                # 从约稿资料表中匹配数据
-                matched = self._match_publication_info(link)
-
-                if matched:
-                    # 填充发布信息（字段名对齐「约稿」sheet 表头：约稿类型/作品截图）
-                    record["标题"] = matched.get("标题")
-                    record["发布日期"] = self._convert_excel_date(
-                        matched.get("发布日期")
-                    )
-                    record["文章类型"] = matched.get("文章类型") or matched.get("约稿类型")
-                    record["截图"] = matched.get("截图") or matched.get("作品截图")
-
-                    # 验证必填字段
-                    missing_fields = []
-                    if not record.get("标题"):
-                        missing_fields.append("标题")
-                    if not record.get("发布日期"):
-                        missing_fields.append("发布日期")
-
-                    if missing_fields:
-                        issues.append(Issue(
-                            level="warning",
-                            code="MISSING_FIELDS",
-                            message=f"缺少字段: {', '.join(missing_fields)}",
-                            node_id=self.node_id,
-                            record_id=record_id,
-                            details={"missing_fields": missing_fields}
-                        ))
-
-                    metrics.success_count += 1
-                    logger.debug(
-                        "publication_info_filled",
-                        record_id=record_id,
-                        title=record.get("标题")
-                    )
-                else:
-                    # 未匹配到数据
+                # 验证必填字段
+                if not record.get("scraped_title"):
                     issues.append(Issue(
                         level="warning",
-                        code="NO_MATCH",
-                        message=f"未在约稿资料表中找到匹配: {link[:50]}...",
+                        code="MISSING_TITLE",
+                        message="未能提取标题",
                         node_id=self.node_id,
                         record_id=record_id
                     ))
-                    metrics.error_count += 1
 
-            except Exception as e:
-                issues.append(Issue(
-                    level="error",
-                    code="PROCESSING_ERROR",
-                    message=f"处理记录时出错: {str(e)}",
-                    node_id=self.node_id,
-                    record_id=record_id
-                ))
-                metrics.error_count += 1
-                logger.error(
-                    "record_processing_error",
-                    record_id=record_id,
-                    error=str(e)
-                )
+                # 将爬取结果映射到标准字段，供后续节点使用
+                record["标题"] = record.get("scraped_title")
+                record["发布日期"] = record.get("scraped_publish_date")
+                record["文章类型"] = record.get("scraped_article_type")
+                record["截图"] = record.get("scraped_screenshot")
+                record["平台"] = record.get("primary_platform")
+
+                metrics.success_count += 1
+
+            # 判断发布形式（原创/通稿）
+            self._determine_publication_type(records_with_scraped)
+
+            logger.info(
+                "web_scraping_completed",
+                total=len(records),
+                success=metrics.success_count,
+                errors=metrics.error_count
+            )
+
+        except Exception as e:
+            logger.error("scraping_failed", error=str(e), exc_info=True)
+            issue = Issue(
+                level="critical",
+                code="SCRAPING_FAILED",
+                message=f"网络爬取失败: {str(e)}",
+                node_id=self.node_id
+            )
+            issues.append(issue)
+            metrics.error_count = len(records)
+            return NodeOutput.create_failure(metrics=metrics, issues=issues)
 
         # 计算耗时
         duration = (datetime.now() - start_time).total_seconds() * 1000
         metrics.duration_ms = duration
 
-        logger.info(
-            "node_completed",
-            node_id=self.node_id,
-            processed=metrics.processed_count,
-            success=metrics.success_count,
-            errors=metrics.error_count,
-            duration_ms=duration
-        )
-
-        return NodeOutput.create_success(
-            metrics=metrics,
+        return self._create_success_output(
+            processed_count=metrics.processed_count,
+            success_count=metrics.success_count,
+            data={},
             issues=issues
         )
 
-    def _match_publication_info(self, link: str) -> Optional[Dict[str, Any]]:
+    def _determine_publication_type(self, records: List[Dict[str, Any]]):
         """
-        从约稿资料表中匹配链接对应的发布信息
+        判断发布形式：原创 vs 通稿
+
+        逻辑：
+        - 维护标题哈希表
+        - 相同标题的视为通稿，不同标题视为原创
 
         Args:
-            link: 待匹配的链接
-
-        Returns:
-            匹配到的记录，或None
+            records: 记录列表（会直接修改）
         """
-        if not self._publication_data:
-            return None
+        # 标题 -> 记录列表
+        title_groups = defaultdict(list)
 
-        # 标准化链接（移除协议、查询参数等）
-        normalized_link = self._normalize_link(link)
+        for record in records:
+            title = record.get("scraped_title", "").strip()
+            if title:
+                # 标准化标题（去除空格、标点等）
+                normalized_title = self._normalize_title(title)
+                title_groups[normalized_title].append(record)
 
-        for row in self._publication_data:
-            row_link = row.get("链接") or row.get("发布链接") or row.get("文章链接")
-            if not row_link:
-                continue
+        # 标记发布形式
+        for normalized_title, group in title_groups.items():
+            if len(group) > 1:
+                # 多个媒体使用相同标题 -> 通稿
+                for record in group:
+                    record["publication_type"] = "通稿"
+                    record["发布形式"] = "通稿"
+            else:
+                # 唯一标题 -> 原创
+                group[0]["publication_type"] = "原创"
+                group[0]["发布形式"] = "原创"
 
-            normalized_row_link = self._normalize_link(row_link)
-
-            # 比较标准化后的链接
-            if normalized_link == normalized_row_link:
-                return row
-
-        return None
+        # 没有标题的记录标记为未知
+        for record in records:
+            if "publication_type" not in record:
+                record["publication_type"] = "未知"
+                record["发布形式"] = "未知"
 
     @staticmethod
-    def _normalize_link(link: str) -> str:
+    def _normalize_title(title: str) -> str:
         """
-        标准化链接用于比较
+        标准化标题用于比较
 
-        - 清理首尾空白与引号（源表中链接常被引号包裹）
-        - 移除协议（http/https）
-        - 移除www前缀
-        - 移除尾部斜杠
-        - 移除查询参数
+        - 去除空格
+        - 去除标点符号
+        - 转小写
         """
-        if not link:
-            return ""
-
-        link = link.strip().strip('"\'')
-
-        # 移除协议
-        link = re.sub(r'^https?://', '', link)
-
-        # 移除www
-        link = re.sub(r'^www\.', '', link)
-
-        # 移除查询参数
-        link = link.split('?')[0]
-
-        # 移除尾部斜杠
-        link = link.rstrip('/')
-
-        return link.lower()
-
-    @staticmethod
-    def _convert_excel_date(value: Any) -> Optional[str]:
-        """
-        统一转换为 YYYY-MM-DD 字符串
-
-        约稿表「发布日期」列以 Excel 序列号存储（如 46050 = 2026-01-28），
-        同时也兼容 datetime 对象与普通日期字符串。
-
-        Args:
-            value: 日期单元格值（int/float/datetime/str）
-
-        Returns:
-            YYYY-MM-DD 字符串，无法识别返回 None
-        """
-        if value is None or value == "":
-            return None
-
-        # 字符串：先按常见格式解析，再尝试 Excel 序列号
-        if isinstance(value, str):
-            s = value.strip()
-            if s:
-                for fmt in ("%Y-%m-%d", "%Y/%m/%d", "%Y.%m.%d"):
-                    try:
-                        return datetime.strptime(s, fmt).strftime("%Y-%m-%d")
-                    except ValueError:
-                        continue
-                # 纯数字（Excel 序列号）
-                try:
-                    return from_excel(float(s)).strftime("%Y-%m-%d")
-                except (ValueError, OverflowError):
-                    return s
-
-        # datetime 对象
-        if isinstance(value, datetime):
-            return value.strftime("%Y-%m-%d")
-
-        # Excel 序列号（int/float）
-        if isinstance(value, (int, float)):
-            try:
-                return from_excel(float(value)).strftime("%Y-%m-%d")
-            except (ValueError, OverflowError):
-                return str(value)
-
-        return str(value)
+        import re
+        # 移除所有空白字符
+        title = re.sub(r'\s+', '', title)
+        # 移除标点符号
+        title = re.sub(r'[^\w一-鿿]', '', title)
+        # 转小写
+        return title.lower()

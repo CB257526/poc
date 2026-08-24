@@ -389,7 +389,44 @@ class Node06GeneratePayment(BaseNode):
             ws.cell(row=row_idx, column=6, value=detail.get("平台"))  # 平台
             ws.cell(row=row_idx, column=7, value=detail.get("标题"))  # 标题
             ws.cell(row=row_idx, column=8, value=detail.get("链接"))  # 发布链接
-            self._set_cell_value(ws, row_idx, 9, detail.get("截图", ""))  # 作品截图
+
+            # 嵌入截图
+            screenshot_path = detail.get("截图")
+            if screenshot_path and os.path.exists(screenshot_path):
+                try:
+                    from openpyxl.drawing.image import Image
+                    from PIL import Image as PILImage
+                    from io import BytesIO
+
+                    # 使用PIL预先缩放图片
+                    original_img = PILImage.open(screenshot_path)
+                    ratio = original_img.size[0] / original_img.size[1]
+                    new_height = 100
+                    new_width = int(new_height * ratio)
+
+                    # 缩放图片
+                    resized_img = original_img.resize((new_width, new_height), PILImage.LANCZOS)
+
+                    # 保存到内存
+                    img_bytes = BytesIO()
+                    resized_img.save(img_bytes, format='PNG')
+                    img_bytes.seek(0)
+
+                    # 嵌入图片（直接从BytesIO）
+                    img = Image(img_bytes)
+                    img.anchor = f'I{row_idx}'
+                    ws.add_image(img)
+
+                    # 设置行高
+                    ws.row_dimensions[row_idx].height = 75
+                except Exception as e:
+                    logger.warning("screenshot_embed_failed", path=screenshot_path, error=str(e))
+                    # 失败时回退到路径
+                    ws.cell(row=row_idx, column=9, value=screenshot_path)
+            else:
+                # 无截图或文件不存在，留空
+                ws.cell(row=row_idx, column=9, value="")
+
             ws.cell(row=row_idx, column=10, value=detail.get("发布日期"))  # 发布日期
             ws.cell(row=row_idx, column=11, value=1)  # 约稿数量（默认1）
             ws.cell(row=row_idx, column=12, value=detail.get("收款方"))  # 户名

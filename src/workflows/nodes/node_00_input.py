@@ -146,3 +146,21 @@ class Node00Input(BaseNode):
             data={"records": records}, #读取表内容
             issues=issues #问题列表
         )
+
+
+# {
+#   "主题": "主题1",
+#   "媒体": "Alex Cui",
+#   "row_n umber": 2, 
+#   "链接": [
+#     "https://weixin.qq.com/sph/A6rPIi6ml",
+#     "微博：https://weibo.com/2633750580/Qohm9jAvX",
+#     "b站：https://www.bilibili.com/video/BV1RgzpBHEQL/",
+#     "抖音： https://v.douyin.com/k4T4MKGl61M/ S@Y.zg",
+#     "小红书： http://xhslink.com/o/4ri7r97p7NR",
+#     "知乎： https://www.zhihu.com/zvideo/1997648866380632485",
+#     "易车：https://vc.m.yiche.com/vplay/10594881.html",
+#     "懂车帝：https://dcd.zjbyte.cn/i7598033298614583870/?link_source=share&app=automobile"
+#   ],
+#   "id": "rec_0001"
+# }
