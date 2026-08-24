@@ -74,11 +74,28 @@ class Node04MatchAccount(BaseNode):
                 matched = self._match_account_info(media_name)
 
                 if matched:
-                    # 填充账户信息
-                    record["收款方"] = matched.get("收款方") or matched.get("账户名称")
-                    record["开户行"] = matched.get("开户行") or matched.get("银行")
-                    record["账号"] = matched.get("账号") or matched.get("银行账号")
-                    record["联系方式"] = matched.get("联系方式") or matched.get("电话")
+                    # 填充账户信息（列名对齐「账户信息」表头：户名/开户行信息/银行卡账号）
+                    record["收款方"] = (
+                        matched.get("收款方")
+                        or matched.get("户名")
+                        or matched.get("账户名称")
+                    )
+                    record["开户行"] = (
+                        matched.get("开户行")
+                        or matched.get("开户行信息（具体到支行）")
+                        or matched.get("银行")
+                    )
+                    record["账号"] = (
+                        matched.get("账号")
+                        or matched.get("银行卡账号")
+                        or matched.get("银行账号")
+                    )
+                    record["联系方式"] = (
+                        matched.get("联系方式") or matched.get("电话")
+                    )
+                    record["身份证"] = (
+                        matched.get("身份证") or matched.get("身份证号")
+                    )
 
                     # 验证必填字段
                     missing_fields = []

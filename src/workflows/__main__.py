@@ -95,7 +95,7 @@ def print_text_output(context):
 
     print(f"\n✅ 运行ID: {context.run_id}")
     print(f"⏱️  开始时间: {context.run_started_at.strftime('%Y-%m-%d %H:%M:%S')}")
-    print(f"📝 完成节点: {len(context.completed_nodes)}/{2}")  # 目前只有2个节点
+    print(f"📝 完成节点: {len(context.completed_nodes)}/7")
     print(f"   {', '.join(context.completed_nodes)}")
 
     print(f"\n📊 数据统计:")

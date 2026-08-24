@@ -4,6 +4,8 @@ import re
 from typing import Dict, Any, Optional
 from datetime import datetime
 
+from openpyxl.utils.datetime import from_excel
+
 from workflows.nodes.base import BaseNode
 from workflows.models import WorkflowContext, NodeOutput, NodeMetrics, Issue
 from workflows.services import get_logger, ExcelService
@@ -31,10 +33,12 @@ class Node02FillPublication(BaseNode):
         metrics = NodeMetrics()
         issues = []
 
-        # 加载约稿资料表
+        # 加载约稿资料表（注意：必须读「约稿」sheet，默认 active 是「约稿费用合计」）
         try:
             publication_table_path = context.get_table_path("2-约稿资料")
-            self._publication_data = ExcelService.read_sheet_as_dicts(publication_table_path)
+            self._publication_data = ExcelService.read_sheet_as_dicts(
+                publication_table_path, sheet_name="约稿"
+            )
             logger.info(
                 "publication_table_loaded",
                 path=publication_table_path,
@@ -76,11 +80,13 @@ class Node02FillPublication(BaseNode):
                 matched = self._match_publication_info(link)
 
                 if matched:
-                    # 填充发布信息
+                    # 填充发布信息（字段名对齐「约稿」sheet 表头：约稿类型/作品截图）
                     record["标题"] = matched.get("标题")
-                    record["发布日期"] = matched.get("发布日期")
-                    record["文章类型"] = matched.get("文章类型")
-                    record["截图"] = matched.get("截图")
+                    record["发布日期"] = self._convert_excel_date(
+                        matched.get("发布日期")
+                    )
+                    record["文章类型"] = matched.get("文章类型") or matched.get("约稿类型")
+                    record["截图"] = matched.get("截图") or matched.get("作品截图")
 
                     # 验证必填字段
                     missing_fields = []
@@ -183,6 +189,7 @@ class Node02FillPublication(BaseNode):
         """
         标准化链接用于比较
 
+        - 清理首尾空白与引号（源表中链接常被引号包裹）
         - 移除协议（http/https）
         - 移除www前缀
         - 移除尾部斜杠
@@ -190,6 +197,8 @@ class Node02FillPublication(BaseNode):
         """
         if not link:
             return ""
+
+        link = link.strip().strip('"\'')
 
         # 移除协议
         link = re.sub(r'^https?://', '', link)
@@ -204,3 +213,48 @@ class Node02FillPublication(BaseNode):
         link = link.rstrip('/')
 
         return link.lower()
+
+    @staticmethod
+    def _convert_excel_date(value: Any) -> Optional[str]:
+        """
+        统一转换为 YYYY-MM-DD 字符串
+
+        约稿表「发布日期」列以 Excel 序列号存储（如 46050 = 2026-01-28），
+        同时也兼容 datetime 对象与普通日期字符串。
+
+        Args:
+            value: 日期单元格值（int/float/datetime/str）
+
+        Returns:
+            YYYY-MM-DD 字符串，无法识别返回 None
+        """
+        if value is None or value == "":
+            return None
+
+        # 字符串：先按常见格式解析，再尝试 Excel 序列号
+        if isinstance(value, str):
+            s = value.strip()
+            if s:
+                for fmt in ("%Y-%m-%d", "%Y/%m/%d", "%Y.%m.%d"):
+                    try:
+                        return datetime.strptime(s, fmt).strftime("%Y-%m-%d")
+                    except ValueError:
+                        continue
+                # 纯数字（Excel 序列号）
+                try:
+                    return from_excel(float(s)).strftime("%Y-%m-%d")
+                except (ValueError, OverflowError):
+                    return s
+
+        # datetime 对象
+        if isinstance(value, datetime):
+            return value.strftime("%Y-%m-%d")
+
+        # Excel 序列号（int/float）
+        if isinstance(value, (int, float)):
+            try:
+                return from_excel(float(value)).strftime("%Y-%m-%d")
+            except (ValueError, OverflowError):
+                return str(value)
+
+        return str(value)

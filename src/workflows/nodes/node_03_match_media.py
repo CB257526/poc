@@ -75,9 +75,17 @@ class Node03MatchMedia(BaseNode):
                 matched = self._match_media_info(media_name, platform)
 
                 if matched:
-                    # 填充媒体等级和粉丝数
-                    record["媒体等级"] = matched.get("媒体等级") or matched.get("等级")
-                    record["粉丝数"] = matched.get("粉丝数") or matched.get("关注数")
+                    # 填充媒体等级和粉丝数（列名对齐「媒体库」表头：媒体级别/粉丝量）
+                    record["媒体等级"] = (
+                        matched.get("媒体等级")
+                        or matched.get("媒体级别")
+                        or matched.get("等级")
+                    )
+                    record["粉丝量"] = (
+                        matched.get("粉丝数")
+                        or matched.get("粉丝量")
+                        or matched.get("关注数")
+                    )
 
                     # 验证必填字段
                     if not record.get("媒体等级"):

@@ -22,9 +22,13 @@ PLATFORM_DOMAINS = {
     "douyin.com": "抖音",
     "xiaohongshu.com": "小红书",
     "xhs.com": "小红书",
+    "xhslink.com": "小红书",  # 小红书短链
     "yiche.com": "易车",
     "dongchedi.com": "懂车帝",
+    "dcd.zjbyte.cn": "懂车帝",  # 懂车帝短链
     "baijiahao.baidu.com": "百家号",
+    "mbd.baidu.com": "百家号",  # 百家号移动端短链
+    "mr.baidu.com": "百家号",   # 百度分享短链
     "toutiao.com": "今日头条",
     "sohu.com": "搜狐",
     "autohome.com.cn": "汽车之家",

@@ -53,3 +53,5 @@ htmlcov/
 
 
 .cbagent
+# 工作流输出产物
+output/

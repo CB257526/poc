@@ -100,17 +100,19 @@ class Node05CalculateFee(BaseNode):
                     detail_row = {
                         "id": record_id,
                         "媒体": media_name,
-                        "平台": record.get("平台"),
+                        "平台": record.get("platform") or record.get("平台"),
                         "标题": title,
                         "发布日期": record.get("发布日期"),
                         "链接": detail_link,
                         "媒体等级": media_level,
+                        "粉丝量": record.get("粉丝量"),
                         "文章类型": article_type,
                         "费用": fee,
                         "收款方": record.get("收款方"),
                         "开户行": record.get("开户行"),
                         "账号": record.get("账号"),
                         "联系方式": record.get("联系方式"),
+                        "身份证": record.get("身份证"),
                         "截图": record.get("截图")
                     }
                     quote_details.append(detail_row)
@@ -181,9 +183,12 @@ class Node05CalculateFee(BaseNode):
         """
         根据媒体等级和文章类型计算费用
 
+        「费用」表结构为：等级 + 视频费用 + 图文费用 分列，
+        需按文章类型（视频/图文）选择对应费用列。
+
         Args:
-            media_level: 媒体等级（如 A+, A, B, C 等）
-            article_type: 文章类型（如 原创、转载、视频等）
+            media_level: 媒体等级（如 FA, FB, FC 等）
+            article_type: 文章类型（如 视频、图文）
 
         Returns:
             费用金额，或None（未找到规则）
@@ -191,25 +196,35 @@ class Node05CalculateFee(BaseNode):
         if not self._fee_rules:
             return None
 
-        # 首先尝试精确匹配（媒体等级 + 文章类型）
+        # 根据文章类型确定费用列
+        fee_column = None
         if article_type:
-            for rule in self._fee_rules:
-                rule_level = rule.get("媒体等级") or rule.get("等级")
-                rule_type = rule.get("文章类型") or rule.get("类型")
-                rule_fee = rule.get("费用") or rule.get("金额")
+            type_map = {
+                "视频": "视频费用",
+                "视频类": "视频费用",
+                "图文": "图文费用",
+                "图文类": "图文费用",
+                "文章": "图文费用",
+            }
+            fee_column = type_map.get(str(article_type).strip())
 
-                if rule_level == media_level and rule_type == article_type:
-                    return self._parse_fee(rule_fee)
-
-        # 如果精确匹配失败，只按媒体等级匹配（返回默认费用）
         for rule in self._fee_rules:
-            rule_level = rule.get("媒体等级") or rule.get("等级")
-            rule_type = rule.get("文章类型") or rule.get("类型")
-            rule_fee = rule.get("费用") or rule.get("金额")
+            rule_level = (
+                rule.get("等级")
+                or rule.get("媒体等级")
+                or rule.get("媒体级别")
+            )
+            if rule_level != media_level:
+                continue
 
-            # 匹配等级，且没有指定类型（表示默认）
-            if rule_level == media_level and (not rule_type or rule_type == "默认"):
-                return self._parse_fee(rule_fee)
+            # 优先从类型对应列取费
+            if fee_column and rule.get(fee_column) is not None:
+                return self._parse_fee(rule.get(fee_column))
+
+            # 回退：尝试任意费用列
+            for col in ("视频费用", "图文费用", "费用", "金额", "基础金额"):
+                if rule.get(col) is not None:
+                    return self._parse_fee(rule.get(col))
 
         return None
 

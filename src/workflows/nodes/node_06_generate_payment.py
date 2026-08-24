@@ -65,13 +65,22 @@ class Node06GeneratePayment(BaseNode):
                 count=len(payment_rows)
             )
 
-            # 3. 写入Excel文件
+            # 3. 写入付款Excel文件
             output_file = self._write_payment_excel(context, quote_details, payment_rows, monthly_summary)
             context.output_files["payment"] = output_file
 
             logger.info(
                 "payment_excel_generated",
                 output_file=output_file
+            )
+
+            # 4. 写入完善后的约稿资料表
+            quote_file = self._write_quote_detail_excel(context, quote_details)
+            context.output_files["quote_detail"] = quote_file
+
+            logger.info(
+                "quote_detail_excel_generated",
+                output_file=quote_file
             )
 
             metrics.success_count = len(quote_details)
@@ -109,8 +118,7 @@ class Node06GeneratePayment(BaseNode):
             issues=issues,
             data={
                 "monthly_summary": monthly_summary,
-                "payment_rows": payment_rows,
-                "output_file": output_file
+                "payment_rows": payment_rows
             }
         )
 
@@ -245,8 +253,7 @@ class Node06GeneratePayment(BaseNode):
 
         for row_idx, row_data in enumerate(payment_rows, start=2):
             for col_idx, header in enumerate(payment_headers, start=1):
-                value = row_data.get(header, "")
-                ws_payment.cell(row=row_idx, column=col_idx, value=value)
+                self._set_cell_value(ws_payment, row_idx, col_idx, row_data.get(header, ""))
 
         # Sheet 2: 约稿明细
         ws_details = wb.create_sheet("约稿明细")
@@ -257,8 +264,7 @@ class Node06GeneratePayment(BaseNode):
 
         for row_idx, row_data in enumerate(quote_details, start=2):
             for col_idx, header in enumerate(detail_headers, start=1):
-                value = row_data.get(header, "")
-                ws_details.cell(row=row_idx, column=col_idx, value=value)
+                self._set_cell_value(ws_details, row_idx, col_idx, row_data.get(header, ""))
 
         # Sheet 3: 月度汇总
         ws_monthly = wb.create_sheet("月度汇总")
@@ -277,6 +283,19 @@ class Node06GeneratePayment(BaseNode):
         wb.save(output_path)
 
         return output_path
+
+    @staticmethod
+    def _set_cell_value(ws, row_idx: int, col_idx: int, value: Any) -> None:
+        """
+        写入单元格值；以 = 开头的字符串（如 WPS 的 =DISPIMG(...) 图片引用）
+        强制按文本存储，避免 openpyxl 当作公式导致读回为空。
+        """
+        cell = ws.cell(row=row_idx, column=col_idx)
+        if isinstance(value, str) and value.startswith("="):
+            cell.value = value
+            cell.data_type = "s"
+        else:
+            cell.value = value
 
     @staticmethod
     def _extract_month(date_str: Any) -> str:
@@ -316,3 +335,69 @@ class Node06GeneratePayment(BaseNode):
             pass
 
         return ""
+
+    def _write_quote_detail_excel(
+        self,
+        context: WorkflowContext,
+        quote_details: List[Dict[str, Any]]
+    ) -> str:
+        """
+        写入完善后的约稿资料Excel文件（模拟填写2-约稿资料表）
+
+        Args:
+            context: 工作流上下文
+            quote_details: 约稿明细数据
+
+        Returns:
+            输出文件路径
+        """
+        # 生成输出文件名
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_filename = f"2-约稿资料_完善版_{timestamp}.xlsx"
+        output_path = os.path.join("./output", output_filename)
+
+        # 确保输出目录存在
+        os.makedirs("./output", exist_ok=True)
+
+        # 使用openpyxl创建Excel
+        from openpyxl import Workbook
+
+        wb = Workbook()
+
+        # Sheet: 约稿
+        ws = wb.active
+        ws.title = "约稿"
+
+        # 表头（对应2-约稿资料.xlsx的结构）
+        headers = [
+            "媒体名称", "媒体级别", "粉丝量", "发布形式", "约稿类型",
+            "平台", "标题", "发布链接", "作品截图", "发布日期",
+            "约稿数量", "户名", "身份证", "账号", "电话"
+        ]
+
+        for col_idx, header in enumerate(headers, start=1):
+            ws.cell(row=1, column=col_idx, value=header)
+
+        # 填充数据
+        for row_idx, detail in enumerate(quote_details, start=2):
+            # 从各节点汇总的数据中提取
+            ws.cell(row=row_idx, column=1, value=detail.get("媒体"))  # 媒体名称
+            ws.cell(row=row_idx, column=2, value=detail.get("媒体等级"))  # 媒体级别
+            ws.cell(row=row_idx, column=3, value=detail.get("粉丝量"))  # 粉丝量
+            ws.cell(row=row_idx, column=4, value=detail.get("发布形式", "原创"))  # 发布形式
+            ws.cell(row=row_idx, column=5, value=detail.get("文章类型"))  # 约稿类型
+            ws.cell(row=row_idx, column=6, value=detail.get("平台"))  # 平台
+            ws.cell(row=row_idx, column=7, value=detail.get("标题"))  # 标题
+            ws.cell(row=row_idx, column=8, value=detail.get("链接"))  # 发布链接
+            self._set_cell_value(ws, row_idx, 9, detail.get("截图", ""))  # 作品截图
+            ws.cell(row=row_idx, column=10, value=detail.get("发布日期"))  # 发布日期
+            ws.cell(row=row_idx, column=11, value=1)  # 约稿数量（默认1）
+            ws.cell(row=row_idx, column=12, value=detail.get("收款方"))  # 户名
+            ws.cell(row=row_idx, column=13, value=detail.get("身份证"))  # 身份证
+            ws.cell(row=row_idx, column=14, value=detail.get("账号"))  # 账号
+            ws.cell(row=row_idx, column=15, value=detail.get("联系方式"))  # 电话
+
+        # 保存文件
+        wb.save(output_path)
+
+        return output_path

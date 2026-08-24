@@ -77,7 +77,6 @@ class Node00Input(BaseNode):
         try:
             # 1-链接.xlsx 是无表头的"主题-媒体-链接"分层表，用专用方法解析
             rows = excel.read_link_sheet(context.input_file, sheet_name="Sheet1")
-            print(f'输入表格：{rows[:5]}')
             if not rows:
                 issues.append(Issue(
                     level="critical",
@@ -142,8 +141,8 @@ class Node00Input(BaseNode):
 
         # === 5. 返回结果 ===
         return self._create_success_output(
-            processed_count=processed_count,
-            success_count=success_count,
-            data={"records": records},
-            issues=issues
+            processed_count=processed_count, #已处理的总记录数
+            success_count=success_count, #成功处理的记录数
+            data={"records": records}, #读取表内容
+            issues=issues #问题列表
         )
