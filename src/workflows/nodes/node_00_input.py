@@ -105,7 +105,33 @@ class Node00Input(BaseNode):
                 issues=issues
             )
 
-        # === 4. 初始化记录结构 ===
+        # === 4. 读取媒体库名称，供下一步校验 ===
+        # 归一化规则与 Node3 保持一致，避免两处对"同名"的判断不同
+        known_media_names = None
+        try:
+            media_table_path = context.get_table_path("3-媒体库")
+            media_rows = excel.read_sheet_as_dicts(media_table_path)
+            known_media_names = {
+                self._normalize_name(name)
+                for row in media_rows
+                if (name := row.get("媒体") or row.get("媒体名称") or row.get("账号"))
+            }
+            known_media_names.discard("")
+            logger.info(
+                "media_names_loaded_for_validation",
+                path=media_table_path,
+                names_count=len(known_media_names)
+            )
+        except Exception as e:
+            # 读不到媒体库时跳过本项校验，交由 Node3 报 critical，不在此处中断
+            issues.append(Issue(
+                level="error",
+                code="MEDIA_TABLE_LOAD_FAILED",
+                message=f"无法加载媒体库表，跳过媒体名称校验: {str(e)}",
+                node_id=self.node_id
+            ))
+
+        # === 5. 初始化记录结构 ===
         records = []
 
         for idx, row in enumerate(rows):
@@ -121,6 +147,22 @@ class Node00Input(BaseNode):
                     record_id=record_id
                 ))
                 continue
+
+            # 校验媒体名称是否存在于媒体库
+            media_name = row.get("媒体")
+            if known_media_names is not None and media_name:
+                if self._normalize_name(media_name) not in known_media_names:
+                    issues.append(Issue(
+                        level="error",
+                        code="MEDIA_NOT_IN_LIBRARY",
+                        message=f"媒体库中没有这个媒体: {media_name}",
+                        node_id=self.node_id,
+                        record_id=record_id,
+                        details={
+                            "media_name": media_name,
+                            "row_number": row.get("row_number")
+                        }
+                    ))
 
             # 创建记录（read_link_sheet 已按媒体聚合，每条记录即一个媒体块，
             # 链接为列表，供 Node1 逐条解析并合并主链接+同步链接）
@@ -139,13 +181,27 @@ class Node00Input(BaseNode):
             issues_count=len(issues)
         )
 
-        # === 5. 返回结果 ===
+        # === 6. 返回结果 ===
         return self._create_success_output(
             processed_count=processed_count, #已处理的总记录数
             success_count=success_count, #成功处理的记录数
             data={"records": records}, #读取表内容
             issues=issues #问题列表
         )
+
+    @staticmethod
+    def _normalize_name(name: str) -> str:
+        """
+        标准化名称用于比较（与 Node3 的 _normalize_name 规则一致）
+
+        - 移除空格
+        - 转换为小写
+        """
+        if not name:
+            return ""
+
+        name = str(name).replace(" ", "").replace("　", "")
+        return name.lower()
 
 
 # {
