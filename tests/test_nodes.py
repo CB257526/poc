@@ -205,11 +205,126 @@ def test_node_03_media_field_mapping():
         {"序号": 2, "媒体名称": "Oxygen", "媒体级别": "FC", "粉丝量": "4.3w"},
     ]
 
-    matched = node._match_media_info("Alex Cui", "知乎")
+    matched = node._match_media_info("Alex Cui")
     assert matched is not None
     # 关键：能取到媒体级别和粉丝量
     assert matched.get("媒体级别") == "FA"
     assert matched.get("粉丝量") == "20.4w（微博129.2w）"
+
+
+def test_node_03_rejects_duplicate_media_name():
+    """媒体库重名时不得静默使用第一条记录。"""
+    node = Node03MatchMedia()
+    node._media_data = [
+        {"媒体名称": "Alex Cui", "媒体级别": "FA", "粉丝量": "20.4w"},
+        {"媒体名称": "Alex Cui", "媒体级别": "FB", "粉丝量": "10w"},
+    ]
+
+    assert node._match_media_info("Alex Cui") is None
+    assert len(node._build_media_index()["alexcui"]) == 2
+
+
+def test_node_03_process_success(monkeypatch, base_context):
+    """匹配成功时写入媒体等级、粉丝量及可处理状态。"""
+    monkeypatch.setattr(
+        "workflows.nodes.node_03_match_media.ExcelService.read_sheet_as_dicts",
+        lambda _: [{"媒体名称": "测试媒体", "媒体级别": "FA", "粉丝量": "20w"}],
+    )
+
+    output = Node03MatchMedia().process(base_context)
+
+    assert output.success is True
+    assert output.metrics.success_count == 1
+    assert output.metrics.error_count == 0
+    assert base_context.records[0]["媒体等级"] == "FA"
+    assert base_context.records[0]["粉丝量"] == "20w"
+    assert base_context.records[0]["media_match_status"] == "matched"
+    assert base_context.records[0]["processable"] is True
+
+
+def test_node_03_process_media_not_found_is_error(monkeypatch, base_context):
+    """表1媒体名无法匹配时生成error并阻止后续业务处理。"""
+    monkeypatch.setattr(
+        "workflows.nodes.node_03_match_media.ExcelService.read_sheet_as_dicts",
+        lambda _: [{"媒体名称": "另一个媒体", "媒体级别": "FA", "粉丝量": "20w"}],
+    )
+
+    output = Node03MatchMedia().process(base_context)
+
+    assert output.metrics.error_count == 1
+    assert any(issue.level == "error" and issue.code == "MEDIA_NOT_FOUND" for issue in output.issues)
+    assert base_context.records[0]["media_match_status"] == "pending_confirmation"
+    assert base_context.records[0]["processable"] is False
+
+
+def test_node_03_does_not_duplicate_node_00_media_error(monkeypatch, base_context):
+    """节点0已报告媒体名称错误时，节点3只设置拦截状态，不重复报错。"""
+    base_context.add_issue(
+        level="error",
+        code="MEDIA_NOT_IN_LIBRARY",
+        message="媒体库中没有这个媒体: 测试媒体",
+        node_id="node_00",
+        record_id="1",
+    )
+    monkeypatch.setattr(
+        "workflows.nodes.node_03_match_media.ExcelService.read_sheet_as_dicts",
+        lambda _: [{"媒体名称": "另一个媒体", "媒体级别": "FA", "粉丝量": "20w"}],
+    )
+
+    output = Node03MatchMedia().process(base_context)
+
+    assert not any(issue.code == "MEDIA_NOT_FOUND" for issue in output.issues)
+    assert base_context.records[0]["media_match_status"] == "pending_confirmation"
+    assert base_context.records[0]["processable"] is False
+
+
+def test_node_03_process_missing_fan_count_is_error(monkeypatch, base_context):
+    """媒体库缺少粉丝量时生成error并标记记录不完整。"""
+    monkeypatch.setattr(
+        "workflows.nodes.node_03_match_media.ExcelService.read_sheet_as_dicts",
+        lambda _: [{"媒体名称": "测试媒体", "媒体级别": "FA", "粉丝量": None}],
+    )
+
+    output = Node03MatchMedia().process(base_context)
+
+    assert output.metrics.error_count == 1
+    assert any(issue.level == "error" and issue.code == "MISSING_FAN_COUNT" for issue in output.issues)
+    assert base_context.records[0]["media_match_status"] == "incomplete"
+    assert base_context.records[0]["processable"] is False
+
+
+def test_node_03_process_missing_media_level_is_error(monkeypatch, base_context):
+    """媒体库缺少媒体级别时生成error并阻止后续业务处理。"""
+    monkeypatch.setattr(
+        "workflows.nodes.node_03_match_media.ExcelService.read_sheet_as_dicts",
+        lambda _: [{"媒体名称": "测试媒体", "媒体级别": None, "粉丝量": "20w"}],
+    )
+
+    output = Node03MatchMedia().process(base_context)
+
+    assert output.metrics.error_count == 1
+    assert any(issue.level == "error" and issue.code == "MISSING_MEDIA_LEVEL" for issue in output.issues)
+    assert base_context.records[0]["media_match_status"] == "incomplete"
+    assert base_context.records[0]["processable"] is False
+
+
+def test_node_03_process_duplicate_media_name_is_error(monkeypatch, base_context):
+    """媒体库出现同名记录时生成error，不自动选择其中一条。"""
+    monkeypatch.setattr(
+        "workflows.nodes.node_03_match_media.ExcelService.read_sheet_as_dicts",
+        lambda _: [
+            {"媒体名称": "测试媒体", "媒体级别": "FA", "粉丝量": "20w"},
+            {"媒体名称": "测试媒体", "媒体级别": "FB", "粉丝量": "10w"},
+        ],
+    )
+
+    output = Node03MatchMedia().process(base_context)
+
+    assert output.metrics.error_count == 1
+    assert any(issue.level == "error" and issue.code == "DUPLICATE_MEDIA_NAME" for issue in output.issues)
+    assert "媒体等级" not in base_context.records[0]
+    assert base_context.records[0]["media_match_status"] == "pending_confirmation"
+    assert base_context.records[0]["processable"] is False
 
 
 def test_node_04_account_field_mapping():
@@ -222,6 +337,7 @@ def test_node_04_account_field_mapping():
             "银行卡账号": "6217921478762521",
             "电话": "18837128611",
             "开户行信息（具体到支行）": "浦发郑州经三路支行",
+            "开户行所在城市": "郑州",
         },
     ]
 
@@ -231,6 +347,106 @@ def test_node_04_account_field_mapping():
     assert matched.get("户名") == "徐浩轩"
     assert matched.get("银行卡账号") == "6217921478762521"
     assert matched.get("开户行信息（具体到支行）") == "浦发郑州经三路支行"
+
+
+def test_node_04_process_success(monkeypatch, base_context):
+    """账户匹配成功时补齐所有输出字段。"""
+    monkeypatch.setattr(
+        "workflows.nodes.node_04_match_account.ExcelService.read_sheet_as_dicts",
+        lambda _: [{
+            "媒体": "测试媒体",
+            "户名": "测试用户",
+            "身份证号": "110101199001011234",
+            "银行卡账号": "6222000000000000",
+            "电话": "13800000000",
+            "开户行信息（具体到支行）": "测试银行北京支行",
+            "开户行所在城市": "北京",
+        }],
+    )
+
+    output = Node04MatchAccount().process(base_context)
+
+    assert output.metrics.success_count == 1
+    assert output.metrics.error_count == 0
+    assert base_context.records[0]["收款方"] == "测试用户"
+    assert base_context.records[0]["身份证"] == "110101199001011234"
+    assert base_context.records[0]["开户行所在城市"] == "北京"
+    assert base_context.records[0]["account_match_status"] == "matched"
+    assert base_context.records[0]["processable"] is True
+
+
+def test_node_04_skips_unprocessable_record(monkeypatch, base_context):
+    """节点3未通过的记录不得进入账户匹配。"""
+    base_context.records[0]["processable"] = False
+    monkeypatch.setattr(
+        "workflows.nodes.node_04_match_account.ExcelService.read_sheet_as_dicts",
+        lambda _: [],
+    )
+
+    output = Node04MatchAccount().process(base_context)
+
+    assert output.metrics.success_count == 0
+    assert output.metrics.error_count == 0
+    assert output.issues == []
+    assert base_context.records[0]["account_match_status"] == "skipped"
+
+
+def test_node_04_account_not_found_is_error(monkeypatch, base_context):
+    """账户信息无法匹配时生成error并阻止后续处理。"""
+    monkeypatch.setattr(
+        "workflows.nodes.node_04_match_account.ExcelService.read_sheet_as_dicts",
+        lambda _: [{"媒体": "另一个媒体"}],
+    )
+
+    output = Node04MatchAccount().process(base_context)
+
+    assert output.metrics.error_count == 1
+    assert any(issue.level == "error" and issue.code == "ACCOUNT_NOT_FOUND" for issue in output.issues)
+    assert base_context.records[0]["account_match_status"] == "not_found"
+    assert base_context.records[0]["processable"] is False
+
+
+def test_node_04_missing_required_field_is_error(monkeypatch, base_context):
+    """任一账户必填字段为空时生成error。"""
+    monkeypatch.setattr(
+        "workflows.nodes.node_04_match_account.ExcelService.read_sheet_as_dicts",
+        lambda _: [{
+            "媒体": "测试媒体",
+            "户名": "测试用户",
+            "身份证号": None,
+            "银行卡账号": "6222000000000000",
+            "电话": "13800000000",
+            "开户行信息（具体到支行）": "测试银行北京支行",
+            "开户行所在城市": "北京",
+        }],
+    )
+
+    output = Node04MatchAccount().process(base_context)
+
+    assert output.metrics.error_count == 1
+    issue = next(issue for issue in output.issues if issue.code == "MISSING_ACCOUNT_FIELDS")
+    assert issue.level == "error"
+    assert issue.details["missing_fields"] == ["身份证"]
+    assert base_context.records[0]["account_match_status"] == "incomplete"
+    assert base_context.records[0]["processable"] is False
+
+
+def test_node_04_duplicate_media_is_error(monkeypatch, base_context):
+    """账户信息表中媒体重名时不得自动选择账户。"""
+    monkeypatch.setattr(
+        "workflows.nodes.node_04_match_account.ExcelService.read_sheet_as_dicts",
+        lambda _: [
+            {"媒体": "测试媒体", "户名": "用户A"},
+            {"媒体": "测试媒体", "户名": "用户B"},
+        ],
+    )
+
+    output = Node04MatchAccount().process(base_context)
+
+    assert output.metrics.error_count == 1
+    assert any(issue.level == "error" and issue.code == "DUPLICATE_ACCOUNT_MEDIA" for issue in output.issues)
+    assert base_context.records[0]["account_match_status"] == "duplicate"
+    assert base_context.records[0]["processable"] is False
 
 
 def test_node_05_calculate_fee_by_type():
