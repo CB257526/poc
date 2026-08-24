@@ -249,8 +249,11 @@ async def scrape_publications(records: List[Dict[str, Any]]) -> List[Dict[str, A
             # 每个URL使用独立的playwright实例
             playwright = await async_playwright().start()
 
+            # 知乎使用非headless模式（绕过登录墙），其他平台使用headless模式
+            is_headless = platform != "知乎"
+
             browser = await playwright.chromium.launch(
-                headless=True,
+                headless=is_headless,
                 args=[
                     '--disable-blink-features=AutomationControlled',
                     '--no-sandbox',
