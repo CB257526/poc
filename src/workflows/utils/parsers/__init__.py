@@ -13,6 +13,7 @@ from .yiche import YicheParser
 from .toutiao import ToutiaoParser
 from .baijiahao import BaijiahaoParser
 from .sohu import SohuParser
+from .kuaishou import KuaishouParser
 from .generic import GenericParser
 
 
@@ -31,6 +32,7 @@ PARSER_MAP: Dict[str, Type[BaseParser]] = {
     "今日头条": ToutiaoParser,
     "百家号": BaijiahaoParser,
     "搜狐": SohuParser,
+    "快手": KuaishouParser,
 }
 
 

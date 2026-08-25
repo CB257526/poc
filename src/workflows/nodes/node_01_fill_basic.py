@@ -32,6 +32,8 @@ PLATFORM_DOMAINS = {
     "toutiao.com": "今日头条",
     "sohu.com": "搜狐",
     "autohome.com.cn": "汽车之家",
+    "kuaishou.com": "快手",
+    "chenzhongtech.com": "快手",  # 快手短链跳转后的域名
 }
 
 
@@ -246,12 +248,15 @@ class Node01FillBasic(BaseNode):
                 result_records.append(record)
 
             else:
-                # 多个链接，按优先级选择主链接：知乎 > 微博 > 第一个
+                # 多个链接，按优先级选择主链接：知乎 > 快手 > 微博 > 第一个
                 zhihu_link = next((r for r in group if r["platform"] == "知乎"), None)
+                kuaishou_link = next((r for r in group if r["platform"] == "快手"), None)
                 weibo_link = next((r for r in group if r["platform"] == "微博"), None)
 
                 if zhihu_link:
                     primary = zhihu_link
+                elif kuaishou_link:
+                    primary = kuaishou_link
                 elif weibo_link:
                     primary = weibo_link
                 else:
