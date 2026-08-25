@@ -59,9 +59,11 @@ frontend/.env.local
 
 
 .cbagent
-# 工作流输出产物
-output/
-runtime/
+# 工作流输出产物（仅仓库根，不要误伤 src/workflows/runtime）
+/output/
+/output-mcp/
+/runtime/
+/runtime-mcp/
 *.db
 
 # 截图临时文件

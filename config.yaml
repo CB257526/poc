@@ -14,8 +14,10 @@ tables:
     - "5-费用"
 
 # 存储配置
+# Excel 产物实际走 workflows.paths：默认 output/<run_id>/，可用 WORKFLOW_OUTPUT_DIR 整段挪走。
+# 运行库默认 runtime/workflow.db，可用 WORKFLOW_RUNTIME_DIR。MCP 进程默认改用 runtime-mcp / output-mcp。
 storage:
-  artifacts_dir: "./artifacts"
+  artifacts_dir: "./output"
   logs_dir: "./logs"
   max_artifact_size_mb: 100
 
@@ -25,12 +27,12 @@ logging:
   format: "json"  # json, console
   output: "both"  # console, file, both
 
-# API配置（MCP服务器）
-api:
+# MCP 观测服务（远端 Streamable HTTP，内网不鉴权）
+mcp:
   host: "0.0.0.0"
-  port: 8000
-  cors_origins:
-    - "*"
+  port: 8100
+  path: "/mcp"
+  transport: "streamable-http"
 
 # LLM配置（当前未使用，预留）
 llm:

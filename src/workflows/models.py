@@ -1,8 +1,11 @@
 """新的数据模型 - 基于 Pydantic"""
 
 from pydantic import BaseModel, Field
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Literal, Optional
 from datetime import datetime
+
+NodeStatus = Literal["pending", "running", "completed", "failed", "skipped"]
+RunStatus = Literal["pending", "running", "completed", "failed", "terminated"]
 
 
 class Issue(BaseModel):
@@ -21,6 +24,20 @@ class NodeMetrics(BaseModel):
     success_count: int = Field(0, description="成功的记录数")
     error_count: int = Field(0, description="失败的记录数")
     duration_ms: float = Field(0, description="执行耗时（毫秒）")
+
+
+class NodeRun(BaseModel):
+    """单次运行中一个节点的时间线记录，供查询层 / MCP 读取。"""
+    node_id: str
+    node_name: str
+    status: NodeStatus = "pending"
+    started_at: Optional[datetime] = None
+    finished_at: Optional[datetime] = None
+    metrics: NodeMetrics = Field(default_factory=NodeMetrics)
+    issue_count: int = 0
+    output_keys: List[str] = Field(default_factory=list)
+    error: Optional[str] = None
+    snapshot_ref: Optional[str] = None
 
 
 class WorkflowContext(BaseModel):
@@ -54,6 +71,10 @@ class WorkflowContext(BaseModel):
     issues: List[Issue] = Field(default_factory=list, description="问题列表")
     current_node: Optional[str] = Field(None, description="当前执行的节点")
     completed_nodes: List[str] = Field(default_factory=list, description="已完成的节点")
+    node_runs: List[NodeRun] = Field(default_factory=list, description="各节点执行时间线")
+    run_status: RunStatus = Field("pending", description="整次运行状态")
+    run_finished_at: Optional[datetime] = Field(None, description="结束时间")
+    termination_reason: Optional[str] = Field(None, description="提前终止原因")
 
     # === 产物 ===
     output_files: Dict[str, str] = Field(default_factory=dict, description="输出文件映射")
@@ -112,6 +133,22 @@ class WorkflowContext(BaseModel):
             record_id=record_id,
             details=details or {}
         ))
+
+    def get_node_run(self, node_id: str) -> Optional[NodeRun]:
+        """按节点 ID 取时间线记录。"""
+        for node_run in self.node_runs:
+            if node_run.node_id == node_id:
+                return node_run
+        return None
+
+    def upsert_node_run(self, node_run: NodeRun) -> NodeRun:
+        """插入或替换某个节点的时间线。"""
+        for index, existing in enumerate(self.node_runs):
+            if existing.node_id == node_run.node_id:
+                self.node_runs[index] = node_run
+                return node_run
+        self.node_runs.append(node_run)
+        return node_run
 
 
 class NodeOutput(BaseModel):

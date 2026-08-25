@@ -100,8 +100,12 @@ class Node06GeneratePayment(BaseNode):
                 count=len(payment_rows)
             )
 
-            # 3. 写入云账户付款上传模板
-            output_dir = context.config.get("output_dir", "./output")
+            # 3. 写入云账户付款上传模板（按 run_id 分子目录）
+            from workflows.paths import run_output_dir
+
+            output_dir = context.config.get("output_dir") or str(
+                run_output_dir(context.run_id, context.config.get("output_root"))
+            )
             output_file = self._write_payment_excel(context, payment_rows, output_dir=output_dir)
             context.output_files["payment"] = output_file
 

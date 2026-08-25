@@ -3,9 +3,11 @@
 import sys
 import argparse
 import json
+import os
 from pathlib import Path
 from datetime import datetime
 
+from workflows.paths import default_table_dir
 from workflows.workflow_run import run_workflow
 from workflows.services import get_logger
 
@@ -31,8 +33,18 @@ def main():
     run_parser.add_argument(
         "--table-dir",
         "-t",
-        default="./table",
-        help="参考表格目录（默认: ./table）"
+        default=None,
+        help="参考表格目录（默认: WORKFLOW_TABLE_DIR 或仓库 table/）"
+    )
+    run_parser.add_argument(
+        "--output-dir",
+        default=None,
+        help="产物根目录（默认: WORKFLOW_OUTPUT_DIR 或仓库 output/，实际写入 <dir>/<run_id>/）"
+    )
+    run_parser.add_argument(
+        "--runtime-dir",
+        default=None,
+        help="运行库目录（默认: WORKFLOW_RUNTIME_DIR 或仓库 runtime/）。与 MCP / HTTP 后端隔离时务必分开。"
     )
     run_parser.add_argument(
         "--output",
@@ -54,7 +66,12 @@ def main():
 def run_command(args):
     """执行 run 命令"""
     input_file = Path(args.input).resolve()
-    table_dir = Path(args.table_dir).resolve()
+    table_dir = Path(args.table_dir).resolve() if args.table_dir else default_table_dir()
+    if args.runtime_dir:
+        os.environ["WORKFLOW_RUNTIME_DIR"] = str(Path(args.runtime_dir).expanduser().resolve())
+    config = {}
+    if args.output_dir:
+        config["output_root"] = str(Path(args.output_dir).resolve())
 
     logger.info(
         "starting_workflow_from_cli",
@@ -63,10 +80,10 @@ def run_command(args):
     )
 
     try:
-        # 运行工作流
         context = run_workflow(
             input_file=str(input_file),
-            table_dir=str(table_dir)
+            table_dir=str(table_dir),
+            config=config or None,
         )
 
         # 输出结果
@@ -97,6 +114,13 @@ def print_text_output(context):
     print(f"⏱️  开始时间: {context.run_started_at.strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"📝 完成节点: {len(context.completed_nodes)}/7")
     print(f"   {', '.join(context.completed_nodes)}")
+    paths = (context.config or {}).get("paths") or {}
+    if paths:
+        print(f"📂 运行时参数:")
+        print(f"   - 输入: {paths.get('input_file')}")
+        print(f"   - 参考表: {paths.get('table_dir')}")
+        print(f"   - 产物目录: {paths.get('output_dir')}")
+        print(f"   - 运行库: {paths.get('runtime_db')}")
 
     print(f"\n📊 数据统计:")
     print(f"   - 记录数: {len(context.records)}")
@@ -174,6 +198,7 @@ def print_json_output(context):
             "warning": len(context.get_issues_by_level("warning"))
         },
         "output_files": context.output_files,
+        "paths": (context.config or {}).get("paths"),
         "has_critical_errors": context.has_critical_errors()
     }
 

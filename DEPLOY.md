@@ -24,7 +24,7 @@
 | `table/2-约稿资料.xlsx` | 否 | 仅样例，工作流**不会读取** |
 | `table/6-付款.xlsx` | 否 | 仅样例，工作流**不会读取** |
 
-输出（写到 `./output/`）：
+输出（写到 `./output/<run_id>/`）：
 
 - `2-约稿资料_完善版_YYYYMMDD_HHMMSS.xlsx`  
   Sheet：`约稿`、`约稿费用合计`
@@ -258,8 +258,8 @@ xvfb-run -a uv run python -m workflows run --input table/1-链接.xlsx
 ```
 完成节点: 7/7
 Critical: 0 / Error: 0 / Warning: 0
-payment: ./output/付款表_YYYYMMDD_HHMMSS.xlsx
-quote_detail: ./output/2-约稿资料_完善版_YYYYMMDD_HHMMSS.xlsx
+payment: ./output/<run_id>/付款表_YYYYMMDD_HHMMSS.xlsx
+quote_detail: ./output/<run_id>/2-约稿资料_完善版_YYYYMMDD_HHMMSS.xlsx
 工作流成功完成
 ```
 
@@ -270,7 +270,7 @@ quote_detail: ./output/2-约稿资料_完善版_YYYYMMDD_HHMMSS.xlsx
 ## 8. 验收产物
 
 ```bash
-ls -l output/
+ls -l output/<run_id>/
 ```
 
 打开约稿资料，至少确认：
@@ -312,12 +312,14 @@ WEB_SCRAPER_CONCURRENCY=1 xvfb-run -a \
 工作流会在项目根下写：
 
 ```
-output/         # Excel 产物（gitignore）
-screenshots/    # 临时截图（gitignore）
-logs/           # 若启用文件日志
+output/<run_id>/   # Excel 产物（gitignore）
+runtime/           # CLI / HTTP 运行库 workflow.db
+runtime-mcp/       # MCP 独立运行库（不要和后端混用）
+screenshots/       # 临时截图（gitignore）
+logs/              # 若启用文件日志
 ```
 
-部署账号需要对项目目录可写。用 systemd / cron 时，`WorkingDirectory` 必须是仓库根目录，否则相对路径 `./table`、`./output` 会找不到。
+部署账号需要对项目目录可写。用 systemd / cron 时，`WorkingDirectory` 必须是仓库根目录，否则相对路径 `./table`、`./output` 会找不到。MCP 与 HTTP 后端同时跑时，务必分目录：`--runtime-dir` / `WORKFLOW_RUNTIME_DIR`。
 
 cron 示例（每天 9 点，Linux + Xvfb）：
 
@@ -369,6 +371,6 @@ uv run pytest tests/ -q
 4. [ ] Linux 已装 Xvfb，或机器本身有桌面  
 5. [ ] `table/` 中 1 / 3 / 4 / 5 四张表齐全  
 6. [ ] 完整命令退出码 0，节点 7/7  
-7. [ ] `output/` 里约稿资料 2 个 Sheet、付款表为云账户模板  
+7. [ ] `output/<run_id>/` 里约稿资料 2 个 Sheet、付款表为云账户模板  
 
 全部完成后，这台机器就可以按第 7 节日常跑批。

@@ -1,11 +1,12 @@
 """节点基类 - 基于 LangChain Runnable"""
 
 from abc import ABC, abstractmethod
+from datetime import datetime
 from typing import Optional
 from langchain_core.runnables import Runnable
 import time
 
-from workflows.models import WorkflowContext, NodeOutput, NodeMetrics, Issue
+from workflows.models import WorkflowContext, NodeOutput, NodeMetrics, NodeRun
 from workflows.services import get_logger
 
 logger = get_logger()
@@ -59,9 +60,17 @@ class BaseNode(Runnable[WorkflowContext, WorkflowContext], ABC):
         """
         context = input
         start_time = time.time()
+        started_at = datetime.now()
 
-        # 更新当前节点
         context.current_node = self.node_id
+        node_run = NodeRun(
+            node_id=self.node_id,
+            node_name=self.node_name,
+            status="running",
+            started_at=started_at,
+        )
+        context.upsert_node_run(node_run)
+        self._persist_progress(context)
 
         logger.info(
             "node_started",
@@ -71,10 +80,8 @@ class BaseNode(Runnable[WorkflowContext, WorkflowContext], ABC):
         )
 
         try:
-            # 执行节点的具体逻辑
             output = self.process(context)
 
-            # 更新上下文：将 output.data 中的数据写入 context
             if output.data:
                 for key, value in output.data.items():
                     if hasattr(context, key):
@@ -86,13 +93,24 @@ class BaseNode(Runnable[WorkflowContext, WorkflowContext], ABC):
                             node_id=self.node_id
                         )
 
-            # 添加问题
             context.issues.extend(output.issues)
-
-            # 标记节点完成
-            context.completed_nodes.append(self.node_id)
+            if output.success and self.node_id not in context.completed_nodes:
+                context.completed_nodes.append(self.node_id)
 
             duration_ms = (time.time() - start_time) * 1000
+            output.metrics.duration_ms = output.metrics.duration_ms or duration_ms
+            node_run.status = "completed" if output.success else "failed"
+            node_run.finished_at = datetime.now()
+            node_run.metrics = output.metrics
+            node_run.issue_count = len(output.issues)
+            node_run.output_keys = list(output.data.keys()) if output.data else []
+            if not output.success:
+                node_run.error = next(
+                    (issue.message for issue in output.issues if issue.level in {"critical", "error"}),
+                    "节点返回失败",
+                )
+            context.upsert_node_run(node_run)
+            self._persist_progress(context, snapshot=True)
 
             logger.info(
                 "node_completed",
@@ -107,9 +125,9 @@ class BaseNode(Runnable[WorkflowContext, WorkflowContext], ABC):
                 issues_count=len(output.issues)
             )
 
-            # 检查是否应该终止工作流
             if self._should_terminate(context):
                 termination_reason = self._get_termination_reason(context)
+                context.termination_reason = termination_reason
                 logger.warning(
                     "workflow_terminating",
                     node_id=self.node_id,
@@ -120,7 +138,7 @@ class BaseNode(Runnable[WorkflowContext, WorkflowContext], ABC):
             return context
 
         except WorkflowTerminated:
-            # 重新抛出终止异常
+            self._persist_progress(context)
             raise
 
         except Exception as e:
@@ -138,7 +156,6 @@ class BaseNode(Runnable[WorkflowContext, WorkflowContext], ABC):
                 exc_info=True
             )
 
-            # 添加 critical 级别的 issue
             context.add_issue(
                 level="critical",
                 code="NODE_EXECUTION_FAILED",
@@ -149,11 +166,40 @@ class BaseNode(Runnable[WorkflowContext, WorkflowContext], ABC):
                     "error_message": str(e)
                 }
             )
+            node_run.status = "failed"
+            node_run.finished_at = datetime.now()
+            node_run.metrics.duration_ms = duration_ms
+            node_run.issue_count = 1
+            node_run.error = error_msg
+            context.upsert_node_run(node_run)
+            context.termination_reason = f"节点 {self.node_id} ({self.node_name}) 执行失败"
+            self._persist_progress(context, snapshot=True)
 
-            # 节点执行失败，终止工作流
             raise WorkflowTerminated(
                 f"节点 {self.node_id} ({self.node_name}) 执行失败"
             ) from e
+
+    def _persist_progress(self, context: WorkflowContext, snapshot: bool = False) -> None:
+        """把当前进度刷到 RunStore。导入延迟到运行时，避免循环依赖。"""
+        try:
+            from workflows.runtime import store as run_store
+
+            store = run_store.get_run_store()
+            store.save_run(context)
+            if snapshot:
+                ref = store.save_node_snapshot(context, self.node_id)
+                node_run = context.get_node_run(self.node_id)
+                if node_run and ref:
+                    node_run.snapshot_ref = ref
+                    context.upsert_node_run(node_run)
+                    store.save_run(context)
+        except Exception:
+            logger.warning(
+                "run_store_persist_failed",
+                node_id=self.node_id,
+                run_id=context.run_id,
+                exc_info=True,
+            )
 
     def _should_terminate(self, context: WorkflowContext) -> bool:
         """

@@ -140,49 +140,37 @@ pytest tests/ -v
 # 20 passed ✅
 ```
 
-### 4. 启动前后端联调版
+### 4. 启动 MCP 观测服务（远端 / 内网）
 
-打开两个终端，并都进入仓库目录：
+工作流每次运行会把节点时间线、issues、脱敏快照写入 SQLite，产物写到 `output/<run_id>/`。
+路径由 `workflows.paths.runtime_params()` 自述（数据库、表1/3/4/5、产物目录）。
 
-```bash
-cd /Users/yangtianyu/Desktop/BYD/poc
-```
+MCP 与 HTTP 后端**不要共用同一份库**：MCP 进程默认 `runtime-mcp/` + `output-mcp/`，
+CLI / 后端默认 `runtime/` + `output/`。也可用环境变量整段挪走：
 
-终端一启动后端 API：
-
-```bash
-uv run uvicorn workflows.api:app --host 127.0.0.1 --port 8000
-```
-
-终端二启动前端：
+| 变量 | CLI / HTTP 默认 | MCP 进程默认 |
+| --- | --- | --- |
+| `WORKFLOW_RUNTIME_DIR` | `runtime/` | `runtime-mcp/` |
+| `WORKFLOW_OUTPUT_DIR` | `output/` | `output-mcp/` |
+| `WORKFLOW_TABLE_DIR` | `table/` | `table/` |
 
 ```bash
-python -m pip install -r frontend/requirements.txt
-python -m streamlit run frontend/app.py --server.port 8501
+uv run workflow-mcp --transport streamable-http --host 0.0.0.0 --port 8100 --path /mcp
 ```
 
-访问 `http://127.0.0.1:8501`。前端默认连接 `http://127.0.0.1:8000`，
-部署时可通过 `WORKFLOW_API_URL` 修改：
+Agent 侧连接：`http://<host>:8100/mcp`。
+
+| 能力 | 协议方法 | 用途 |
+| --- | --- | --- |
+| Tools | `tools/call` | 带过滤的查询：`list_runs`、`get_run`、`wait_run`、`get_funnel`、`get_node`、`list_issues`、`summarize_issues`、`list_records`、`get_record`、`list_artifacts`、`describe_artifact`、`get_workflow_schema`；写：`start_run` |
+| Resources | `resources/read` | 固定文档：`workflow://schema`、`workflow://runs`、`workflow://runs/{run_id}`、`workflow://runs/{run_id}/nodes/{node_id}` |
+| Prompts | `prompts/get` | 用户触发的排错模板：`inspect_run`、`inspect_node`、`explain_record` |
+
+本地调试也可用 stdio：
 
 ```bash
-WORKFLOW_API_URL=https://api.example.com uv run streamlit run frontend/app.py
+uv run workflow-mcp --transport stdio
 ```
-
-真实文件处理流程：
-
-1. 上传 `1-链接.xlsx` 并调用输入预检接口。
-2. 媒体名不匹配时暂停，前端按原表行号提交修正。
-3. 节点0重新校验通过后，异步执行节点1—6。
-4. 前端查询任务状态并下载真实的约稿资料和付款文件。
-5. 只有校验通过的数据会进入费用、付款和月度汇总。
-
-主要接口：
-
-- `POST /api/v1/tasks/validate`：上传并预检表1。
-- `POST /api/v1/tasks/{task_id}/corrections`：提交媒体名称修正。
-- `POST /api/v1/tasks/{task_id}/run`：启动完整工作流。
-- `GET /api/v1/tasks/{task_id}`：查询状态与统计。
-- `GET /api/v1/tasks/{task_id}/files/{file_key}`：下载结果文件。
 
 ## 🔧 开发指南
 
@@ -297,7 +285,7 @@ tables:
   dir: "./table"
 
 storage:
-  artifacts_dir: "./artifacts"
+  artifacts_dir: "./output"
   logs_dir: "./logs"
 
 logging:

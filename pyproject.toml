@@ -17,11 +17,12 @@ dependencies = [
     "beautifulsoup4>=4.15.0",
     "playwright>=1.40.0",
     "pillow>=10.0.0",
+    "mcp[cli]>=2.1.0",
 ]
 
 [project.scripts]
 workflow = "workflows.__main__:main"
-workflow-api = "workflows.api:main"
+workflow-mcp = "workflows.mcp_server:main"
 
 [build-system]
 requires = ["hatchling"]
