@@ -259,12 +259,8 @@ class Node05CalculateFee(BaseNode):
 
     @staticmethod
     def _display_platform(record: Dict[str, Any]) -> str:
-        """约稿表「平台」列：同步链接很多时标「多平台」，否则用主链接平台。"""
-        primary = record.get("primary_platform") or record.get("platform") or ""
-        sync_links = record.get("sync_links") or []
-        if len(sync_links) >= 7:
-            return "多平台"
-        return primary
+        """约稿表「平台」列：始终用主链接平台。"""
+        return record.get("primary_platform") or record.get("platform") or ""
 
     @staticmethod
     def _sync_platform_text(record: Dict[str, Any]) -> str:

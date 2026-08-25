@@ -413,7 +413,7 @@ def test_node_05_calculate_fee_by_type():
 
 
 def test_node_05_display_platform_and_sync_text():
-    """约稿表平台列：同步链接很多时标多平台；同步平台保留原始多行文本。"""
+    """约稿表平台列始终用主链接平台；同步平台保留原始多行文本。"""
     node = Node05CalculateFee()
 
     few_sync = {
@@ -424,8 +424,13 @@ def test_node_05_display_platform_and_sync_text():
         "primary_platform": "知乎",
         "sync_links": [{"url": f"https://weibo.com/{i}"} for i in range(7)],
     }
+    kuaishou_primary = {
+        "primary_platform": "快手",
+        "sync_links": [{"url": f"https://weibo.com/{i}"} for i in range(10)],
+    }
     assert node._display_platform(few_sync) == "知乎"
-    assert node._display_platform(many_sync) == "多平台"
+    assert node._display_platform(many_sync) == "知乎"
+    assert node._display_platform(kuaishou_primary) == "快手"
 
     record = {
         "链接": ["知乎 https://zhihu.com/p/1", "微博 https://weibo.com/1"],
@@ -498,7 +503,7 @@ def test_node_06_write_quote_excel_matches_sample_layout(tmp_path):
     details = [
         {
             "媒体": "Alex Cui", "媒体等级": "FA", "粉丝量": "20.4w",
-            "发布形式": "原创", "文章类型": "视频", "平台": "多平台",
+            "发布形式": "原创", "文章类型": "视频", "平台": "知乎",
             "标题": "t1", "链接": "https://zhihu.com/1", "发布日期": "2026-01-28",
             "收款方": "崔诚靓", "身份证": "id1", "账号": "acc1", "联系方式": "tel1",
             "开户行": "行1", "开户行所在城市": "北京", "基础金额": 2000, "奖励金额": None,
@@ -537,7 +542,7 @@ def test_node_06_write_quote_excel_matches_sample_layout(tmp_path):
     ]
     assert ws.cell(2, 4).value is None
     assert ws.cell(2, 5).value == "视频"
-    assert ws.cell(2, 6).value == "多平台"
+    assert ws.cell(2, 6).value == "知乎"
     assert ws.cell(2, 16).value == "行1"
     assert ws.cell(2, 17).value == "北京"
     assert ws.cell(2, 18).value == 2000
