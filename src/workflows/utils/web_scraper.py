@@ -280,9 +280,13 @@ async def scrape_publications(records: List[Dict[str, Any]]) -> List[Dict[str, A
             """)
 
             try:
-                # 适度并发：知乎用 Semaphore(2)，避免被识别为批量爬虫
-                # 但比完全串行快一倍
-                semaphore = asyncio.Semaphore(2)
+                # 适度并发控制：
+                # - 本地测试时 Semaphore(2) 很快
+                # - 服务器环境可能网络慢、CPU 弱，降到 1-2 更安全
+                # - 环境变量可动态调整：WEB_SCRAPER_CONCURRENCY
+                import os
+                concurrency = int(os.environ.get('WEB_SCRAPER_CONCURRENCY', '2'))
+                semaphore = asyncio.Semaphore(concurrency)
 
                 async def scrape_one_record(record):
                     """并发处理单条记录"""
@@ -298,18 +302,31 @@ async def scrape_publications(records: List[Dict[str, Any]]) -> List[Dict[str, A
                         try:
                             # 为这条链接开一个新 page
                             page = await context.new_page()
-                            page.set_default_timeout(30000)
+                            # 慢速服务器需要更长的超时时间
+                            page.set_default_timeout(60000)  # 60秒，之前是 30秒
 
                             try:
                                 # 随机延迟（缩短以提升速度，仍保留反爬特征）
                                 await asyncio.sleep(random.uniform(0.5, 1.5))
 
-                                # 访问页面 - 使用 domcontentloaded 而非 networkidle，
-                                # 只需主体 DOM 加载完即可，不等推荐/广告等次要资源
-                                await page.goto(url, wait_until="domcontentloaded")
+                                # 访问页面 - 使用 load 而非 domcontentloaded 或 networkidle：
+                                # - domcontentloaded: 太快，慢速网络下 JS 可能还没执行
+                                # - load: 等主要资源加载完，比 networkidle 快但比 domcontentloaded 稳
+                                # - networkidle: 最稳但最慢（等所有网络请求空闲 500ms）
+                                await page.goto(url, wait_until="load")
 
-                                # 等待动态内容渲染（JavaScript 执行）
-                                await asyncio.sleep(random.uniform(1.0, 2.0))
+                                # 等待关键内容元素出现（知乎标题），最多等 10 秒
+                                # 这比固定延迟更可靠：快速网络跳过等待，慢速网络有足够时间
+                                try:
+                                    # 知乎标题的常见选择器
+                                    await page.wait_for_selector(
+                                        'h1, .QuestionHeader-title, .Post-Title, .ContentItem-title',
+                                        timeout=10000,
+                                        state='visible'
+                                    )
+                                except Exception:
+                                    # 如果特定选择器失败，降级到固定延迟
+                                    await asyncio.sleep(random.uniform(1.5, 2.5))
 
                                 # 检查HTML
                                 html = await page.content()
