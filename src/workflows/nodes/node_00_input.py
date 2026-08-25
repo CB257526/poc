@@ -131,11 +131,11 @@ class Node00Input(BaseNode):
             media_table_path = context.get_table_path("3-媒体库")
             media_rows = excel.read_sheet_as_dicts(media_table_path)
             known_media_names = {
-                self._normalize_name(name)
+                self._normalize_name(name): str(name).strip()
                 for row in media_rows
                 if (name := row.get("媒体") or row.get("媒体名称") or row.get("账号"))
             }
-            known_media_names.discard("")
+            known_media_names.pop("", None)
             logger.info(
                 "media_names_loaded_for_validation",
                 path=media_table_path,
@@ -160,9 +160,20 @@ class Node00Input(BaseNode):
 
         # === 6. 初始化记录结构 ===
         records = []
+        # 前端在首次校验发现媒体名错误后，可按 Excel 行号提交修正值。
+        # 工作流会从节点0重新执行，确保修正后的名称仍经过完整校验，再进入后续节点。
+        media_name_corrections = {
+            str(key): str(value).strip()
+            for key, value in (context.config.get("media_name_corrections") or {}).items()
+            if str(value).strip()
+        }
 
         for idx, row in enumerate(merged_rows):
             record_id = f"rec_{idx + 1:04d}"
+
+            correction = media_name_corrections.get(str(row.get("row_number")))
+            if correction:
+                row = {**row, "媒体": correction}
 
             # 验证必需字段（链接为列表，空列表视为缺失）
             if not row.get("链接"):
@@ -187,7 +198,8 @@ class Node00Input(BaseNode):
                         record_id=record_id,
                         details={
                             "media_name": media_name,
-                            "row_number": row.get("row_number")
+                            "row_number": row.get("row_number"),
+                            "allowed_media_names": sorted(known_media_names.values()),
                         }
                     ))
 

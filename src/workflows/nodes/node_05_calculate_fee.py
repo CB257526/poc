@@ -54,6 +54,7 @@ class Node05CalculateFee(BaseNode):
 
         # 准备约稿明细列表
         quote_details = []
+        excluded_count = 0
 
         # 处理每条记录
         for record in context.records:
@@ -61,6 +62,19 @@ class Node05CalculateFee(BaseNode):
             record_id = record.get("id", "unknown")
 
             try:
+                # 只有媒体与账户均校验通过的记录，才能进入费用、付款和月度统计。
+                # 错误记录保留在 context.records 供前端修正，但绝不能形成财务明细。
+                if record.get("processable") is not True:
+                    excluded_count += 1
+                    logger.info(
+                        "record_excluded_from_financial_outputs",
+                        record_id=record_id,
+                        media=record.get("媒体"),
+                        media_match_status=record.get("media_match_status"),
+                        account_match_status=record.get("account_match_status"),
+                    )
+                    continue
+
                 # 获取计算费用所需的字段
                 media_level = record.get("媒体等级")
                 article_type = record.get("文章类型")
@@ -120,6 +134,7 @@ class Node05CalculateFee(BaseNode):
                         "身份证": record.get("身份证"),
                         "截图": None,
                         "同步平台": self._sync_platform_text(record),
+                        "eligible_for_monthly_summary": True,
                     }
                     quote_details.append(detail_row)
 
@@ -162,7 +177,8 @@ class Node05CalculateFee(BaseNode):
         context.quote_details = {
             "details": quote_details,
             "total_count": len(quote_details),
-            "total_fee": sum(float(d.get("费用", 0)) for d in quote_details)
+            "total_fee": sum(float(d.get("费用", 0)) for d in quote_details),
+            "excluded_count": excluded_count,
         }
 
         # 计算耗时

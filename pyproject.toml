@@ -21,6 +21,7 @@ dependencies = [
 
 [project.scripts]
 workflow = "workflows.__main__:main"
+workflow-api = "workflows.api:main"
 
 [build-system]
 requires = ["hatchling"]

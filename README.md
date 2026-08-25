@@ -140,6 +140,50 @@ pytest tests/ -v
 # 20 passed ✅
 ```
 
+### 4. 启动前后端联调版
+
+打开两个终端，并都进入仓库目录：
+
+```bash
+cd /Users/yangtianyu/Desktop/BYD/poc
+```
+
+终端一启动后端 API：
+
+```bash
+uv run uvicorn workflows.api:app --host 127.0.0.1 --port 8000
+```
+
+终端二启动前端：
+
+```bash
+python -m pip install -r frontend/requirements.txt
+python -m streamlit run frontend/app.py --server.port 8501
+```
+
+访问 `http://127.0.0.1:8501`。前端默认连接 `http://127.0.0.1:8000`，
+部署时可通过 `WORKFLOW_API_URL` 修改：
+
+```bash
+WORKFLOW_API_URL=https://api.example.com uv run streamlit run frontend/app.py
+```
+
+真实文件处理流程：
+
+1. 上传 `1-链接.xlsx` 并调用输入预检接口。
+2. 媒体名不匹配时暂停，前端按原表行号提交修正。
+3. 节点0重新校验通过后，异步执行节点1—6。
+4. 前端查询任务状态并下载真实的约稿资料和付款文件。
+5. 只有校验通过的数据会进入费用、付款和月度汇总。
+
+主要接口：
+
+- `POST /api/v1/tasks/validate`：上传并预检表1。
+- `POST /api/v1/tasks/{task_id}/corrections`：提交媒体名称修正。
+- `POST /api/v1/tasks/{task_id}/run`：启动完整工作流。
+- `GET /api/v1/tasks/{task_id}`：查询状态与统计。
+- `GET /api/v1/tasks/{task_id}/files/{file_key}`：下载结果文件。
+
 ## 🔧 开发指南
 
 ### 工作流节点说明
