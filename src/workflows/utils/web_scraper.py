@@ -280,51 +280,62 @@ async def scrape_publications(records: List[Dict[str, Any]]) -> List[Dict[str, A
             """)
 
             try:
-                # 串行处理每条记录
-                for record in records:
-                    url = record.get("primary_link")
-                    platform = record.get("primary_platform", "unknown")
+                # 适度并发：知乎用 Semaphore(2)，避免被识别为批量爬虫
+                # 但比完全串行快一倍
+                semaphore = asyncio.Semaphore(2)
 
-                    if not url:
-                        continue
+                async def scrape_one_record(record):
+                    """并发处理单条记录"""
+                    async with semaphore:
+                        url = record.get("primary_link")
+                        platform = record.get("primary_platform", "unknown")
 
-                    logger.info("scraping_page", url=url, platform=platform)
+                        if not url:
+                            return
 
-                    try:
-                        # 为这条链接开一个新 page
-                        page = await context.new_page()
-                        page.set_default_timeout(30000)
+                        logger.info("scraping_page", url=url, platform=platform)
 
                         try:
-                            # 随机延迟
-                            await asyncio.sleep(random.uniform(2.0, 5.0))
+                            # 为这条链接开一个新 page
+                            page = await context.new_page()
+                            page.set_default_timeout(30000)
 
-                            # 访问页面
-                            await page.goto(url, wait_until="networkidle")
-                            await asyncio.sleep(random.uniform(2.0, 4.0))
+                            try:
+                                # 随机延迟（缩短以提升速度，仍保留反爬特征）
+                                await asyncio.sleep(random.uniform(0.5, 1.5))
 
-                            # 检查HTML
-                            html = await page.content()
-                            logger.info("page_loaded", url=url, html_length=len(html), has_zse_ck="zse-ck" in html)
+                                # 访问页面 - 使用 domcontentloaded 而非 networkidle，
+                                # 只需主体 DOM 加载完即可，不等推荐/广告等次要资源
+                                await page.goto(url, wait_until="domcontentloaded")
 
-                            # 获取解析器并解析
-                            parser = get_parser(platform)
-                            result = await parser.parse(page, url)
+                                # 等待动态内容渲染（JavaScript 执行）
+                                await asyncio.sleep(random.uniform(1.0, 2.0))
 
-                            logger.info("scraping_success", url=url, title=result.get("title", "")[:50])
+                                # 检查HTML
+                                html = await page.content()
+                                logger.info("page_loaded", url=url, html_length=len(html), has_zse_ck="zse-ck" in html)
 
-                            # 合并结果
-                            record["scraped_title"] = result.get("title")
-                            record["scraped_publish_date"] = result.get("publish_date")
-                            record["scraped_article_type"] = result.get("article_type")
-                            record["scraped_screenshot"] = result.get("screenshot_path")
+                                # 获取解析器并解析
+                                parser = get_parser(platform)
+                                result = await parser.parse(page, url)
 
-                        finally:
-                            await page.close()
+                                logger.info("scraping_success", url=url, title=result.get("title", "")[:50])
 
-                    except Exception as e:
-                        logger.error("scraping_failed", url=url, error=str(e))
-                        record["scrape_error"] = str(e)
+                                # 合并结果
+                                record["scraped_title"] = result.get("title")
+                                record["scraped_publish_date"] = result.get("publish_date")
+                                record["scraped_article_type"] = result.get("article_type")
+                                record["scraped_screenshot"] = result.get("screenshot_path")
+
+                            finally:
+                                await page.close()
+
+                        except Exception as e:
+                            logger.error("scraping_failed", url=url, error=str(e))
+                            record["scrape_error"] = str(e)
+
+                # 并发处理所有记录
+                await asyncio.gather(*[scrape_one_record(r) for r in records])
 
             finally:
                 await context.close()
