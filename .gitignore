@@ -51,11 +51,18 @@ htmlcov/
 # UV
 .python-version
 
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+frontend/.env.local
+
 
 .cbagent
 # 工作流输出产物
 output/
 runtime/
+*.db
 
 # 截图临时文件
 screenshots/

@@ -1,260 +1,107 @@
-# 约稿平台前端
+# 约稿平台前端（React）
 
-本目录是约稿平台的 Streamlit 前端，通过 HTTP API 调用 `src/workflows/` 中的 FastAPI 后端和节点 0—6 工作流。
+由 `app.py`（Streamlit POC）迁移而来的 React 单页应用。业务页面、处理流程、费用统计口径与原 Streamlit 版一致；额外补齐了登录 / 注册、角色权限、基础配置与用户管理。
 
-## 目录结构
+Streamlit 源码仍保留在 `app.py`，仅作对照，不再作为运行入口。
 
-```text
-frontend/
-├── app.py              # Streamlit 页面与接口调用逻辑
-├── requirements.txt    # 前端独立依赖
-└── README.md           # 前后端联调说明
-```
+## 技术栈
 
-后端主要文件：
+- Vite 7 + React 19 + TypeScript
+- React Router 7
+- Recharts（柱状图 / 折线图）
+- 无 UI 组件库，样式对齐原 POC：品牌蓝 `#165DFF`、侧栏 `#102A56`
 
-```text
-src/workflows/api.py          # HTTP API
-src/workflows/workflow_run.py # 工作流入口
-src/workflows/nodes/          # 节点0—6
-```
-
-## 1. 启动后端
-
-在第一个终端中执行：
+## 本地启动
 
 ```bash
-cd /Users/yangtianyu/Desktop/BYD/poc
-uv sync
-uv run playwright install chromium
-uv run uvicorn workflows.api:app --host 127.0.0.1 --port 8000
+cd frontend
+cp env.example .env   # 首次
+npm install
+npm run dev
 ```
 
-验证后端：
+浏览器打开 `http://127.0.0.1:5173`。
+
+默认 `VITE_USE_MOCK=true`，不依赖后端即可走完全部页面。
+
+对接真实后端时：
 
 ```bash
-curl http://127.0.0.1:8000/health
+# .env
+VITE_API_BASE_URL=http://127.0.0.1:8000
+VITE_USE_MOCK=false
 ```
 
-正常返回：
+开发代理：`/api` → `http://127.0.0.1:8000`（见 `vite.config.ts`）。后端需允许前端来源 CORS。
 
-```json
-{"status":"ok"}
-```
+## 演示账号
 
-接口文档地址：`http://127.0.0.1:8000/docs`。
+密码均为 `Passw0rd!`
 
-## 2. 启动前端
-
-在第二个终端中执行：
-
-```bash
-cd /Users/yangtianyu/Desktop/BYD/poc
-python -m pip install -r frontend/requirements.txt
-python -m streamlit run frontend/app.py --server.port 8501
-```
-
-访问：`http://127.0.0.1:8501`。
-
-## 3. 环境变量
-
-前端默认连接本机 `8000` 端口：
-
-```text
-WORKFLOW_API_URL=http://127.0.0.1:8000
-```
-
-部署或连接其他后端时：
-
-```bash
-WORKFLOW_API_URL=https://api.example.com \
-python -m streamlit run frontend/app.py
-```
-
-可配置项：
-
-| 环境变量 | 默认值 | 说明 |
+| 邮箱 | 角色 | 说明 |
 | --- | --- | --- |
-| `WORKFLOW_API_URL` | `http://127.0.0.1:8000` | 后端 API 根地址 |
-| `WORKFLOW_API_TIMEOUT` | `30` | 前端接口超时秒数 |
+| admin@byd.local | 管理员 | 全部页面 + 配置 / 用户审核 |
+| operator@byd.local | 业务人员 | 上传处理、异常核验、导出 |
+| finance@byd.local | 财务 | 查看资料 / 费用、下载付款文件 |
+| viewer@byd.local | 只读访客 | 仅概览、约稿资料、费用分析 |
+| new.user@byd.local | 待审核 | 无法登录 |
 
-后端可配置项：
+注册新账号后状态为「待审核」，需管理员在「用户管理」通过。
 
-| 环境变量 | 默认值 | 说明 |
-| --- | --- | --- |
-| `WORKFLOW_TABLE_DIR` | `./table` | 媒体库、账户、费用等基础表目录 |
-| `WORKFLOW_RUNTIME_DIR` | `./runtime` | 上传文件、任务和输出文件目录 |
-| `CORS_ORIGINS` | `*` | 允许访问 API 的前端来源，多个值用逗号分隔 |
+## 页面与角色
 
-## 4. 真实业务流程
+| 路由 | 页面 | admin | operator | finance | viewer |
+| --- | --- | :---: | :---: | :---: | :---: |
+| `/login` `/register` | 登录 / 注册 | 游客 | 游客 | 游客 | 游客 |
+| `/` | 首页概览 | ✓ | ✓ | ✓ | ✓ |
+| `/processing` | 数据处理 | ✓ | ✓ | | |
+| `/quotes` | 约稿资料 | ✓ | ✓ | ✓ | ✓ |
+| `/analytics` | 费用分析 | ✓ | ✓ | ✓ | ✓ |
+| `/exceptions` | 异常提醒 | ✓ | ✓ | | |
+| `/exports` | 文件输出 | ✓ | ✓ | ✓ | |
+| `/config` | 基础配置 | ✓ | | | |
+| `/users` | 用户管理 | ✓ | | | |
+
+无权限访问时展示「无访问权限」，侧栏不显示对应入口。
+
+## 业务处理流程（与原 Streamlit 一致）
 
 ```text
 上传 1-链接.xlsx
         ↓
-节点0输入预检
+POST /api/v1/tasks/validate   节点0 输入预检
         ↓
-媒体名称是否全部匹配 3-媒体库.xlsx？
-   ├─ 否：暂停 → 页面修改媒体名 → 重新执行节点0
-   └─ 是：启动节点1—6
+媒体名称是否全部匹配媒体库？
+   ├─ 否：暂停 → 页面下拉修改 → POST .../corrections
+   └─ 是：POST .../run 启动节点1—6
         ↓
-查询任务状态
+轮询 GET /api/v1/tasks/{id}
         ↓
-下载约稿资料和付款文件
+约稿资料 / 费用分析 / 下载文件
 ```
 
-媒体名称匹配规则：
+未匹配媒体名不会进入费用、付款和月度汇总。
 
-- 去除普通空格和全角空格。
-- 英文名称忽略大小写。
-- 必须唯一匹配媒体库中的一个标准媒体名称。
-- 未匹配记录不会继续计算费用，也不会进入付款或月度汇总。
-- 修正值通过原 Excel 行号与后端记录对应。
-
-## 5. API 对接
-
-### 5.1 上传并预检表1
-
-```http
-POST /api/v1/tasks/validate
-Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
-
-<Excel 二进制内容>
-```
-
-需要修改媒体名称时：
-
-```json
-{
-  "task_id": "任务ID",
-  "status": "needs_correction",
-  "records": [
-    {
-      "record_id": "rec_0001",
-      "row_number": 16,
-      "topic": "主题1",
-      "media_name": "汽车之加",
-      "link_count": 8,
-      "link_preview": "https://example.com/..."
-    }
-  ],
-  "allowed_media_names": ["汽车之家", "懂车帝"]
-}
-```
-
-### 5.2 提交媒体名称修正
-
-```http
-POST /api/v1/tasks/{task_id}/corrections
-Content-Type: application/json
-```
-
-```json
-{
-  "media_name_corrections": {
-    "16": "汽车之家"
-  }
-}
-```
-
-键是表1中的原始 Excel 行号，值是媒体库中的标准媒体名称。返回 `ready` 后才能启动后续工作流。
-
-### 5.3 启动节点1—6
-
-```http
-POST /api/v1/tasks/{task_id}/run
-```
-
-成功返回 HTTP `202`：
-
-```json
-{
-  "task_id": "任务ID",
-  "status": "running"
-}
-```
-
-### 5.4 查询任务状态
-
-```http
-GET /api/v1/tasks/{task_id}
-```
-
-状态值：
-
-| 状态 | 含义 | 前端行为 |
-| --- | --- | --- |
-| `needs_correction` | 输入存在错误 | 展示修改面板，禁止继续 |
-| `ready` | 输入预检通过 | 允许启动节点1—6 |
-| `running` | 后台处理中 | 展示处理状态并定期查询 |
-| `completed` | 处理完成 | 展示统计和下载按钮 |
-| `failed` | 处理失败 | 展示问题信息，不计入月度汇总 |
-
-### 5.5 下载结果文件
-
-```http
-GET /api/v1/tasks/{task_id}/files/quote_detail
-GET /api/v1/tasks/{task_id}/files/payment
-```
-
-对应文件：
-
-- `quote_detail`：完善后的 `2-约稿资料`。
-- `payment`：生成的 `6-付款`。
-
-### 5.6 查询当月累计与 TOP 媒体
-
-```http
-GET /api/v1/analytics/monthly?month=2026-08
-```
-
-不传 `month` 时默认查询当前自然月。接口只统计校验通过并成功完成的任务，返回批次数、约稿数量、总费用、平均每批费用、批次明细和 TOP 媒体。
-
-## 6. 数据统计口径
-
-只有同时满足以下条件的记录才允许进入财务和月度统计：
-
-- 媒体名称唯一匹配。
-- 媒体等级和粉丝量完整。
-- 账户所需字段完整。
-- 费用规则匹配成功。
-- 记录被标记为 `processable=True`。
-- 费用明细被标记为 `eligible_for_monthly_summary=True`。
-
-待修改、待确认、匹配失败或处理失败的记录均不会进入：
-
-- 约稿费用明细；
-- 付款文件；
-- 本次费用统计；
-- 当月约稿数量；
-- 当月费用汇总。
-
-## 7. 开发说明
-
-- 未上传文件时，前端使用模拟数据展示 UI 流程。
-- 上传真实文件后，前端会调用 FastAPI，不再使用模拟处理结果。
-- 原始 Excel 不会被覆盖；在线修正作为任务参数提交，最终生成新的结果文件。
-- 当前 POC 的任务运行状态保存在后端内存中，服务重启后会丢失；已完成任务的月度统计会保存到 `runtime/workflow.db`。正式部署建议将任务状态也迁移到数据库或 Redis。
-
-## 8. 常见问题
-
-### 前端提示无法连接后端
-
-确认后端已启动，并访问：
+## 目录
 
 ```text
-http://127.0.0.1:8000/health
+frontend/
+├── app.py                 # 原 Streamlit，仅对照
+├── docs/API.md            # 前端所需后端接口（后端开发以这份为准）
+├── src/
+│   ├── api/               # HTTP 客户端 + Mock 实现
+│   ├── auth/              # 登录态、路由守卫
+│   ├── layout/            # 侧栏布局
+│   ├── mock/data.ts       # 演示数据
+│   ├── pages/             # 各业务页
+│   └── types/             # 与接口对齐的类型
+├── env.example
+└── vite.config.ts
 ```
 
-### Playwright 提示找不到 Chromium
+## 构建
 
 ```bash
-uv run playwright install chromium
+npm run build
+npm run preview
 ```
-
-### 修改媒体名后仍不能继续
-
-修正值必须来自接口返回的 `allowed_media_names`，并确保页面中所有未匹配记录都已修改。
-
-### 错误数据是否计入当月统计
-
-不会。后端在节点5和节点6分别执行过滤，避免异常记录进入费用、付款和月度汇总。
