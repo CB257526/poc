@@ -107,7 +107,8 @@ class Node05CalculateFee(BaseNode):
                         "媒体等级": media_level,
                         "粉丝量": record.get("粉丝量"),
                         "文章类型": article_type,
-                        "发布形式": record.get("发布形式") or record.get("publication_type") or "原创",
+                        # 由业务人员下载完成版后手动填写，不使用爬取或推断结果。
+                        "发布形式": None,
                         "费用": fee,
                         "基础金额": fee,
                         "奖励金额": record.get("奖励金额") or None,
@@ -117,7 +118,7 @@ class Node05CalculateFee(BaseNode):
                         "账号": record.get("账号"),
                         "联系方式": record.get("联系方式"),
                         "身份证": record.get("身份证"),
-                        "截图": record.get("截图"),
+                        "截图": None,
                         "同步平台": self._sync_platform_text(record),
                     }
                     quote_details.append(detail_row)

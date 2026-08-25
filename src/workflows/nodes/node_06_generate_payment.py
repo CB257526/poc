@@ -1,6 +1,6 @@
 """节点6: 生成约稿资料与云账户付款表"""
 
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List
 from datetime import datetime
 from collections import defaultdict
 import os
@@ -391,12 +391,13 @@ class Node06GeneratePayment(BaseNode):
             ws.cell(row=row_idx, column=1, value=detail.get("媒体"))
             ws.cell(row=row_idx, column=2, value=detail.get("媒体等级"))
             ws.cell(row=row_idx, column=3, value=detail.get("粉丝量"))
-            ws.cell(row=row_idx, column=4, value=detail.get("发布形式") or "原创")
+            # “发布形式”和“作品截图”由业务人员下载后手动填写。
+            ws.cell(row=row_idx, column=4, value=None)
             ws.cell(row=row_idx, column=5, value=detail.get("文章类型"))
             ws.cell(row=row_idx, column=6, value=detail.get("平台"))
             ws.cell(row=row_idx, column=7, value=detail.get("标题"))
             ws.cell(row=row_idx, column=8, value=detail.get("链接"))
-            self._embed_screenshot(ws, row_idx, detail.get("截图"))
+            ws.cell(row=row_idx, column=9, value=None)
             ws.cell(row=row_idx, column=10, value=detail.get("发布日期"))
             ws.cell(row=row_idx, column=11, value=1)
             ws.cell(row=row_idx, column=12, value=detail.get("收款方"))
@@ -432,7 +433,7 @@ class Node06GeneratePayment(BaseNode):
             ws_sum.cell(row=row_idx, column=1, value=detail.get("媒体"))
             ws_sum.cell(row=row_idx, column=2, value=detail.get("媒体等级"))
             ws_sum.cell(row=row_idx, column=3, value=detail.get("文章类型"))
-            ws_sum.cell(row=row_idx, column=4, value=detail.get("发布形式") or "原创")
+            ws_sum.cell(row=row_idx, column=4, value=None)
             ws_sum.cell(row=row_idx, column=5, value=1)
             ws_sum.cell(row=row_idx, column=6, value=detail.get("收款方"))
             ws_sum.cell(row=row_idx, column=7, value=detail.get("身份证"))
@@ -453,32 +454,6 @@ class Node06GeneratePayment(BaseNode):
 
         wb.save(output_path)
         return output_path
-
-    def _embed_screenshot(self, ws, row_idx: int, screenshot_path: Optional[str]) -> None:
-        if screenshot_path and os.path.exists(screenshot_path):
-            try:
-                from openpyxl.drawing.image import Image
-                from PIL import Image as PILImage
-                from io import BytesIO
-
-                original_img = PILImage.open(screenshot_path)
-                ratio = original_img.size[0] / original_img.size[1]
-                new_height = 100
-                new_width = int(new_height * ratio)
-                resized_img = original_img.resize((new_width, new_height), PILImage.LANCZOS)
-                img_bytes = BytesIO()
-                resized_img.save(img_bytes, format="PNG")
-                img_bytes.seek(0)
-                img = Image(img_bytes)
-                img.anchor = f"I{row_idx}"
-                ws.add_image(img)
-                ws.row_dimensions[row_idx].height = 75
-                return
-            except Exception as e:
-                logger.warning("screenshot_embed_failed", path=screenshot_path, error=str(e))
-                ws.cell(row=row_idx, column=9, value=screenshot_path)
-                return
-        ws.cell(row=row_idx, column=9, value="")
 
     @staticmethod
     def _merge_payee_totals(ws, quote_details: List[Dict[str, Any]]) -> None:

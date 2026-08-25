@@ -467,6 +467,8 @@ def test_node_05_quote_details_include_sample_fields(monkeypatch, base_context):
     assert detail["开户行所在城市"] == "北京"
     assert detail["平台"] == "知乎"
     assert "知乎 https://zhihu.com/p/1" in detail["同步平台"]
+    assert detail["发布形式"] is None
+    assert detail["截图"] is None
 
 
 def test_node_06_payment_rows_preserve_first_seen_order():
@@ -501,6 +503,7 @@ def test_node_06_write_quote_excel_matches_sample_layout(tmp_path):
             "收款方": "崔诚靓", "身份证": "id1", "账号": "acc1", "联系方式": "tel1",
             "开户行": "行1", "开户行所在城市": "北京", "基础金额": 2000, "奖励金额": None,
             "同步平台": "知乎 https://zhihu.com/1\n微博 https://weibo.com/1",
+            "截图": "should-not-be-exported.png",
         },
         {
             "媒体": "Oxygen", "媒体等级": "FC", "粉丝量": "4.3w",
@@ -532,13 +535,14 @@ def test_node_06_write_quote_excel_matches_sample_layout(tmp_path):
         "约稿数量", "户名", "身份证", "账号", "电话",
         "开户行", "开户行所在城市", "基础金额", "奖励金额", "同步平台",
     ]
-    assert ws.cell(2, 4).value == "原创"
+    assert ws.cell(2, 4).value is None
     assert ws.cell(2, 5).value == "视频"
     assert ws.cell(2, 6).value == "多平台"
     assert ws.cell(2, 16).value == "行1"
     assert ws.cell(2, 17).value == "北京"
     assert ws.cell(2, 18).value == 2000
     assert ws.cell(2, 20).value.startswith("知乎")
+    assert ws.cell(2, 9).value is None
     assert ws.cell(5, 17).value == "合计"
     assert ws.cell(5, 18).value == "=SUM(R2:R4)"
 
@@ -548,9 +552,9 @@ def test_node_06_write_quote_excel_matches_sample_layout(tmp_path):
         "户名", "身份证", "账号", "电话", "开户行",
         "开户行所在城市", "基础金额", "奖励金额", "合计费用",
     ]
-    # 费用合计表中发布形式/约稿类型与约稿表对调
+    # 费用合计表中发布形式=视频/图文；约稿类型留空待业务人员填写
     assert ws_sum.cell(2, 3).value == "视频"
-    assert ws_sum.cell(2, 4).value == "原创"
+    assert ws_sum.cell(2, 4).value is None
     assert ws_sum.cell(3, 14).value == 1200.0
     assert ws_sum.cell(4, 14).value is None
     assert "C3:C4" not in {str(r) for r in ws_sum.merged_cells.ranges}
