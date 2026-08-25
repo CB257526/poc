@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import sqlite3
 import threading
 import uuid
 from datetime import datetime
@@ -34,6 +35,66 @@ app.add_middleware(
 
 _tasks: dict[str, dict[str, Any]] = {}
 _task_lock = threading.Lock()
+
+
+def _database_path() -> Path:
+    return BASE_DIR / "workflow.db"
+
+
+def _init_database() -> None:
+    with sqlite3.connect(_database_path()) as connection:
+        connection.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS completed_batches (
+                task_id TEXT PRIMARY KEY,
+                month TEXT NOT NULL,
+                processed_at TEXT NOT NULL,
+                quote_count INTEGER NOT NULL,
+                total_fee REAL NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS completed_details (
+                task_id TEXT NOT NULL,
+                detail_id TEXT NOT NULL,
+                month TEXT NOT NULL,
+                media TEXT NOT NULL,
+                article_type TEXT,
+                fee REAL NOT NULL,
+                PRIMARY KEY (task_id, detail_id)
+            );
+            """
+        )
+
+
+def _detail_month(detail: dict[str, Any]) -> str:
+    value = str(detail.get("发布日期") or "").strip().replace("/", "-")
+    return value[:7] if len(value) >= 7 and value[:4].isdigit() else ""
+
+
+def _save_completed_statistics(task_id: str, context: WorkflowContext) -> None:
+    details = [
+        detail for detail in (context.quote_details or {}).get("details", [])
+        if detail.get("eligible_for_monthly_summary") is True and _detail_month(detail)
+    ]
+    if not details:
+        return
+    _init_database()
+    processed_at = datetime.now().isoformat()
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for detail in details:
+        grouped.setdefault(_detail_month(detail), []).append(detail)
+    with sqlite3.connect(_database_path()) as connection:
+        for month, month_details in grouped.items():
+            batch_key = f"{task_id}:{month}"
+            connection.execute(
+                "INSERT OR REPLACE INTO completed_batches VALUES (?, ?, ?, ?, ?)",
+                (batch_key, month, processed_at, len(month_details), sum(float(d.get("费用") or 0) for d in month_details)),
+            )
+            for index, detail in enumerate(month_details):
+                detail_id = str(detail.get("id") or index)
+                connection.execute(
+                    "INSERT OR REPLACE INTO completed_details VALUES (?, ?, ?, ?, ?, ?)",
+                    (task_id, detail_id, month, str(detail.get("媒体") or ""), str(detail.get("文章类型") or ""), float(detail.get("费用") or 0)),
+                )
 
 
 class CorrectionRequest(BaseModel):
@@ -110,6 +171,8 @@ def _execute_task(task_id: str) -> None:
             "issues": context.issues,
             "updated_at": datetime.now().isoformat(),
         })
+        if task["status"] == "completed":
+            _save_completed_statistics(task_id, context)
     except Exception as exc:
         task.update({"status": "failed", "error": str(exc), "updated_at": datetime.now().isoformat()})
 
@@ -189,6 +252,49 @@ def download_file(task_id: str, file_key: str):
     if output_dir not in path.parents or not path.is_file():
         raise HTTPException(status_code=404, detail="结果文件不存在")
     return FileResponse(path, filename=path.name)
+
+
+@app.get("/api/v1/analytics/monthly")
+def monthly_analytics(month: str | None = None) -> dict[str, Any]:
+    target_month = month or datetime.now().strftime("%Y-%m")
+    _init_database()
+    with sqlite3.connect(_database_path()) as connection:
+        connection.row_factory = sqlite3.Row
+        summary = connection.execute(
+            """
+            SELECT COUNT(*) AS batch_count,
+                   COALESCE(SUM(quote_count), 0) AS quote_count,
+                   COALESCE(SUM(total_fee), 0) AS total_fee
+            FROM completed_batches WHERE month = ?
+            """,
+            (target_month,),
+        ).fetchone()
+        batches = connection.execute(
+            """
+            SELECT task_id, processed_at, quote_count, total_fee
+            FROM completed_batches WHERE month = ? ORDER BY processed_at
+            """,
+            (target_month,),
+        ).fetchall()
+        top_media = connection.execute(
+            """
+            SELECT media, COUNT(*) AS quote_count, SUM(fee) AS total_fee
+            FROM completed_details WHERE month = ?
+            GROUP BY media ORDER BY total_fee DESC LIMIT 10
+            """,
+            (target_month,),
+        ).fetchall()
+    batch_count = int(summary["batch_count"])
+    total_fee = float(summary["total_fee"])
+    return {
+        "month": target_month,
+        "batch_count": batch_count,
+        "quote_count": int(summary["quote_count"]),
+        "total_fee": total_fee,
+        "average_batch_fee": total_fee / batch_count if batch_count else 0,
+        "batches": [dict(row) for row in batches],
+        "top_media": [dict(row) for row in top_media],
+    }
 
 
 def main() -> None:
