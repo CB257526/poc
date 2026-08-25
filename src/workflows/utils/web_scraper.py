@@ -226,8 +226,10 @@ async def scrape_publications(records: List[Dict[str, Any]]) -> List[Dict[str, A
     """
     便捷函数：并发爬取发布信息
 
-    采用完全隔离策略：每个URL使用独立的browser实例
-    这样可以避免被知乎识别为批量自动化爬虫
+    策略：
+    - 知乎链接仍需 headful 模式（非 headless）
+    - 但改用单一 browser/context 实例，仅为每个链接开独立 page
+    - 串行访问以避免被识别为批量爬虫
 
     Args:
         records: 记录列表
@@ -235,31 +237,26 @@ async def scrape_publications(records: List[Dict[str, Any]]) -> List[Dict[str, A
     Returns:
         带爬取结果的记录列表
     """
-    # 完全串行，每个URL独立的browser实例
-    for record in records:
-        url = record.get("primary_link")
-        platform = record.get("primary_platform", "unknown")
+    import random
+    from workflows.utils.parsers import get_parser
 
-        if not url:
-            continue
+    # 检查是否有知乎链接
+    has_zhihu = any(r.get("primary_platform") == "知乎" for r in records)
 
-        logger.info("scraping_page", url=url, platform=platform)
+    # 启动一个 playwright 实例
+    playwright = await async_playwright().start()
+
+    try:
+        # 如果有知乎链接，用 headful 模式；否则 headless
+        browser = await playwright.chromium.launch(
+            headless=not has_zhihu,
+            args=[
+                '--disable-blink-features=AutomationControlled',
+                '--no-sandbox',
+            ]
+        )
 
         try:
-            # 每个URL使用独立的playwright实例
-            playwright = await async_playwright().start()
-
-            # 知乎使用非headless模式（绕过登录墙），其他平台使用headless模式
-            is_headless = platform != "知乎"
-
-            browser = await playwright.chromium.launch(
-                headless=is_headless,
-                args=[
-                    '--disable-blink-features=AutomationControlled',
-                    '--no-sandbox',
-                ]
-            )
-
             context = await browser.new_context(
                 viewport={"width": 1920, "height": 1080},
                 user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
@@ -269,7 +266,7 @@ async def scrape_publications(records: List[Dict[str, Any]]) -> List[Dict[str, A
 
             await context.add_init_script("""
                 Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
-                window.chrome = {runtime: , loadTimes: function() {}, csi: function() {}};
+                window.chrome = {runtime: {}, loadTimes: function() {}, csi: function() {}};
                 Object.defineProperty(navigator, 'plugins', {
                     get: () => [
                         {name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer'},
@@ -282,42 +279,60 @@ async def scrape_publications(records: List[Dict[str, Any]]) -> List[Dict[str, A
                 });
             """)
 
-            page = await context.new_page()
-            page.set_default_timeout(30000)
+            try:
+                # 串行处理每条记录
+                for record in records:
+                    url = record.get("primary_link")
+                    platform = record.get("primary_platform", "unknown")
 
-            # 随机延迟
-            import random
-            await asyncio.sleep(random.uniform(2.0, 5.0))
+                    if not url:
+                        continue
 
-            # 访问页面
-            await page.goto(url, wait_until="networkidle")
-            await asyncio.sleep(random.uniform(2.0, 4.0))
+                    logger.info("scraping_page", url=url, platform=platform)
 
-            # 检查HTML
-            html = await page.content()
-            logger.info("page_loaded", url=url, html_length=len(html), has_zse_ck="zse-ck" in html)
+                    try:
+                        # 为这条链接开一个新 page
+                        page = await context.new_page()
+                        page.set_default_timeout(30000)
 
-            # 获取解析器并解析
-            from workflows.utils.parsers import get_parser
-            parser = get_parser(platform)
-            result = await parser.parse(page, url)
+                        try:
+                            # 随机延迟
+                            await asyncio.sleep(random.uniform(2.0, 5.0))
 
-            logger.info("scraping_success", url=url, title=result.get("title", "")[:50])
+                            # 访问页面
+                            await page.goto(url, wait_until="networkidle")
+                            await asyncio.sleep(random.uniform(2.0, 4.0))
 
-            # 合并结果
-            record["scraped_title"] = result.get("title")
-            record["scraped_publish_date"] = result.get("publish_date")
-            record["scraped_article_type"] = result.get("article_type")
-            record["scraped_screenshot"] = result.get("screenshot_path")
+                            # 检查HTML
+                            html = await page.content()
+                            logger.info("page_loaded", url=url, html_length=len(html), has_zse_ck="zse-ck" in html)
 
-            # 清理
-            await page.close()
-            await context.close()
+                            # 获取解析器并解析
+                            parser = get_parser(platform)
+                            result = await parser.parse(page, url)
+
+                            logger.info("scraping_success", url=url, title=result.get("title", "")[:50])
+
+                            # 合并结果
+                            record["scraped_title"] = result.get("title")
+                            record["scraped_publish_date"] = result.get("publish_date")
+                            record["scraped_article_type"] = result.get("article_type")
+                            record["scraped_screenshot"] = result.get("screenshot_path")
+
+                        finally:
+                            await page.close()
+
+                    except Exception as e:
+                        logger.error("scraping_failed", url=url, error=str(e))
+                        record["scrape_error"] = str(e)
+
+            finally:
+                await context.close()
+
+        finally:
             await browser.close()
-            await playwright.stop()
 
-        except Exception as e:
-            logger.error("scraping_failed", url=url, error=str(e))
-            record["scrape_error"] = str(e)
+    finally:
+        await playwright.stop()
 
     return records
