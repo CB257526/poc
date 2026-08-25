@@ -93,27 +93,32 @@ class Node05CalculateFee(BaseNode):
                 if fee is not None:
                     record["费用"] = fee
 
-                    # 生成约稿明细行
+                    # 生成约稿明细行（字段对齐 table/2-约稿资料.xlsx）
                     detail_link = record.get("primary_link") or record.get("链接")
                     if isinstance(detail_link, list):
                         detail_link = detail_link[0] if detail_link else None
                     detail_row = {
                         "id": record_id,
                         "媒体": media_name,
-                        "平台": record.get("platform") or record.get("平台"),
+                        "平台": self._display_platform(record),
                         "标题": title,
                         "发布日期": record.get("发布日期"),
                         "链接": detail_link,
                         "媒体等级": media_level,
                         "粉丝量": record.get("粉丝量"),
                         "文章类型": article_type,
+                        "发布形式": record.get("发布形式") or record.get("publication_type") or "原创",
                         "费用": fee,
+                        "基础金额": fee,
+                        "奖励金额": record.get("奖励金额") or None,
                         "收款方": record.get("收款方"),
                         "开户行": record.get("开户行"),
+                        "开户行所在城市": record.get("开户行所在城市"),
                         "账号": record.get("账号"),
                         "联系方式": record.get("联系方式"),
                         "身份证": record.get("身份证"),
-                        "截图": record.get("截图")
+                        "截图": record.get("截图"),
+                        "同步平台": self._sync_platform_text(record),
                     }
                     quote_details.append(detail_row)
 
@@ -250,3 +255,31 @@ class Node05CalculateFee(BaseNode):
             return float(fee_value)
         except (ValueError, TypeError):
             return None
+
+    @staticmethod
+    def _display_platform(record: Dict[str, Any]) -> str:
+        """约稿表「平台」列：同步链接很多时标「多平台」，否则用主链接平台。"""
+        primary = record.get("primary_platform") or record.get("platform") or ""
+        sync_links = record.get("sync_links") or []
+        if len(sync_links) >= 7:
+            return "多平台"
+        return primary
+
+    @staticmethod
+    def _sync_platform_text(record: Dict[str, Any]) -> str:
+        """同步平台列：保留 1-链接 中的原始多行文本。"""
+        links = record.get("链接")
+        if isinstance(links, list):
+            return "\n".join(str(item).strip() for item in links if item)
+        if links:
+            return str(links).strip()
+
+        parts: List[str] = []
+        raw_primary = record.get("raw_link_text")
+        if raw_primary:
+            parts.append(str(raw_primary).strip())
+        for item in record.get("sync_links") or []:
+            text = item.get("raw_text") or item.get("url")
+            if text:
+                parts.append(str(text).strip())
+        return "\n".join(parts)

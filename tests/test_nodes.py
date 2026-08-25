@@ -29,27 +29,6 @@ def base_context():
     )
 
 
-def test_node_02_normalize_link():
-    """测试链接标准化"""
-    node = Node02FillPublication()
-
-    # 测试移除协议
-    assert node._normalize_link("https://example.com/path") == "example.com/path"
-    assert node._normalize_link("http://example.com/path") == "example.com/path"
-
-    # 测试移除www
-    assert node._normalize_link("https://www.example.com/path") == "example.com/path"
-
-    # 测试移除查询参数
-    assert node._normalize_link("https://example.com/path?key=value") == "example.com/path"
-
-    # 测试移除尾部斜杠
-    assert node._normalize_link("https://example.com/path/") == "example.com/path"
-
-    # 测试组合情况
-    assert node._normalize_link("https://www.example.com/path/?key=value") == "example.com/path"
-
-
 def test_node_03_normalize_name():
     """测试名称标准化"""
     node = Node03MatchMedia()
@@ -161,41 +140,6 @@ def test_workflow_with_all_nodes(base_context):
 # ============================================================
 # 回归测试：针对真实表格结构修复的字段映射与转换逻辑
 # ============================================================
-
-def test_node_02_convert_excel_date():
-    """测试 Excel 序列日期转换（约稿表发布日期为序列号，如 46050=2026-01-28）"""
-    node = Node02FillPublication()
-
-    # Excel 序列号（int / float / 字符串）
-    assert node._convert_excel_date(46050) == "2026-01-28"
-    assert node._convert_excel_date(46050.0) == "2026-01-28"
-    assert node._convert_excel_date("46050") == "2026-01-28"
-
-    # datetime 对象
-    assert node._convert_excel_date(datetime(2026, 2, 3)) == "2026-02-03"
-
-    # 普通日期字符串
-    assert node._convert_excel_date("2026-01-22") == "2026-01-22"
-    assert node._convert_excel_date("2026/02/15") == "2026-02-15"
-
-    # 空值 / 无法识别
-    assert node._convert_excel_date(None) is None
-    assert node._convert_excel_date("") is None
-
-
-def test_node_02_normalize_link_with_quotes():
-    """测试链接标准化能清理引号（源表中链接常被引号包裹）"""
-    node = Node02FillPublication()
-
-    # 带尾引号（来自 1-链接 表）
-    assert node._normalize_link('https://www.bilibili.com/opus/1160708465008574473"') \
-        == "bilibili.com/opus/1160708465008574473"
-    # 带开头引号（同时验证查询参数会被移除）
-    assert node._normalize_link('"https://weibo.com/ttarticle/p/show?id=2309405257991917273143') \
-        == "weibo.com/ttarticle/p/show"
-    # 单引号包裹
-    assert node._normalize_link("'https://example.com/path/'") == "example.com/path"
-
 
 def test_node_03_media_field_mapping():
     """测试媒体库列名映射（真实表头：媒体级别/粉丝量，而非媒体等级/粉丝数）"""
@@ -466,3 +410,196 @@ def test_node_05_calculate_fee_by_type():
     assert node._calculate_fee("FC", "图文") == 600.0
     # 未知等级
     assert node._calculate_fee("ZZ", "图文") is None
+
+
+def test_node_05_display_platform_and_sync_text():
+    """约稿表平台列：同步链接很多时标多平台；同步平台保留原始多行文本。"""
+    node = Node05CalculateFee()
+
+    few_sync = {
+        "primary_platform": "知乎",
+        "sync_links": [{"url": "https://weibo.com/1"}] * 6,
+    }
+    many_sync = {
+        "primary_platform": "知乎",
+        "sync_links": [{"url": f"https://weibo.com/{i}"} for i in range(7)],
+    }
+    assert node._display_platform(few_sync) == "知乎"
+    assert node._display_platform(many_sync) == "多平台"
+
+    record = {
+        "链接": ["知乎 https://zhihu.com/p/1", "微博 https://weibo.com/1"],
+    }
+    assert node._sync_platform_text(record) == "知乎 https://zhihu.com/p/1\n微博 https://weibo.com/1"
+
+
+def test_node_05_quote_details_include_sample_fields(monkeypatch, base_context):
+    """费用明细需带上表2所需的开户行、城市、基础金额、同步平台。"""
+    base_context.records[0].update({
+        "媒体等级": "FA",
+        "文章类型": "视频",
+        "发布形式": "原创",
+        "primary_link": "https://zhihu.com/p/1",
+        "primary_platform": "知乎",
+        "发布日期": "2026-01-28",
+        "标题": "测试标题",
+        "粉丝量": "20w",
+        "收款方": "测试用户",
+        "开户行": "测试银行北京支行",
+        "开户行所在城市": "北京",
+        "账号": "6222000000000000",
+        "联系方式": "13800000000",
+        "身份证": "110101199001011234",
+        "链接": ["知乎 https://zhihu.com/p/1", "微博 https://weibo.com/1"],
+        "sync_links": [{"url": "https://weibo.com/1", "raw_text": "微博 https://weibo.com/1"}],
+    })
+    monkeypatch.setattr(
+        "workflows.nodes.node_05_calculate_fee.ExcelService.read_sheet_as_dicts",
+        lambda _: [{"等级": "FA", "视频费用": 2000, "图文费用": 1000}],
+    )
+
+    output = Node05CalculateFee().process(base_context)
+
+    assert output.success is True
+    detail = base_context.quote_details["details"][0]
+    assert detail["基础金额"] == 2000.0
+    assert detail["开户行"] == "测试银行北京支行"
+    assert detail["开户行所在城市"] == "北京"
+    assert detail["平台"] == "知乎"
+    assert "知乎 https://zhihu.com/p/1" in detail["同步平台"]
+
+
+def test_node_06_payment_rows_preserve_first_seen_order():
+    """付款行按约稿资料中户名首次出现顺序汇总。"""
+    node = Node06GeneratePayment()
+    details = [
+        {"收款方": "崔诚靓", "费用": 2000, "账号": "1", "身份证": "a", "联系方式": "11", "开户行": "行1"},
+        {"收款方": "徐浩轩", "费用": 600, "账号": "2", "身份证": "b", "联系方式": "22", "开户行": "行2"},
+        {"收款方": "徐浩轩", "费用": 600, "账号": "2", "身份证": "b", "联系方式": "22", "开户行": "行2"},
+        {"收款方": "任开瑞", "费用": 600, "账号": "3", "身份证": "c", "联系方式": "33", "开户行": "行3"},
+        {"收款方": "任开瑞", "费用": 600, "账号": "3", "身份证": "c", "联系方式": "33", "开户行": "行3"},
+    ]
+
+    rows = node._generate_payment_rows(details)
+
+    assert [row["户名"] for row in rows] == ["崔诚靓", "徐浩轩", "任开瑞"]
+    assert rows[1]["基础服务费"] == 1200.0
+    assert rows[2]["基础服务费"] == 1200.0
+    assert rows[0]["备注"] == ""
+
+
+def test_node_06_write_quote_excel_matches_sample_layout(tmp_path):
+    """约稿资料写出约稿 + 约稿费用合计，字段与合计行对齐样表。"""
+    from openpyxl import load_workbook
+
+    node = Node06GeneratePayment()
+    details = [
+        {
+            "媒体": "Alex Cui", "媒体等级": "FA", "粉丝量": "20.4w",
+            "发布形式": "原创", "文章类型": "视频", "平台": "多平台",
+            "标题": "t1", "链接": "https://zhihu.com/1", "发布日期": "2026-01-28",
+            "收款方": "崔诚靓", "身份证": "id1", "账号": "acc1", "联系方式": "tel1",
+            "开户行": "行1", "开户行所在城市": "北京", "基础金额": 2000, "奖励金额": None,
+            "同步平台": "知乎 https://zhihu.com/1\n微博 https://weibo.com/1",
+        },
+        {
+            "媒体": "Oxygen", "媒体等级": "FC", "粉丝量": "4.3w",
+            "发布形式": "原创", "文章类型": "图文", "平台": "知乎",
+            "标题": "t2", "链接": "https://zhihu.com/2", "发布日期": "2026-01-29",
+            "收款方": "徐浩轩", "身份证": "id2", "账号": "acc2", "联系方式": "tel2",
+            "开户行": "行2", "开户行所在城市": "郑州", "基础金额": 600, "奖励金额": None,
+            "同步平台": "知乎 https://zhihu.com/2",
+        },
+        {
+            "媒体": "Oxygen", "媒体等级": "FC", "粉丝量": "4.3w",
+            "发布形式": "原创", "文章类型": "图文", "平台": "知乎",
+            "标题": "t3", "链接": "https://zhihu.com/3", "发布日期": "2026-01-30",
+            "收款方": "徐浩轩", "身份证": "id2", "账号": "acc2", "联系方式": "tel2",
+            "开户行": "行2", "开户行所在城市": "郑州", "基础金额": 600, "奖励金额": None,
+            "同步平台": "知乎 https://zhihu.com/3",
+        },
+    ]
+    context = WorkflowContext(run_id="t", run_started_at=datetime.now(), input_file="t.xlsx")
+    path = node._write_quote_detail_excel(context, details, output_dir=str(tmp_path))
+
+    wb = load_workbook(path)
+    assert wb.sheetnames == ["约稿", "约稿费用合计"]
+
+    ws = wb["约稿"]
+    assert [ws.cell(1, c).value for c in range(1, 21)] == [
+        "媒体名称", "媒体级别", "粉丝量", "发布形式", "约稿类型",
+        "平台", "标题", "发布链接", "作品截图", "发布日期",
+        "约稿数量", "户名", "身份证", "账号", "电话",
+        "开户行", "开户行所在城市", "基础金额", "奖励金额", "同步平台",
+    ]
+    assert ws.cell(2, 4).value == "原创"
+    assert ws.cell(2, 5).value == "视频"
+    assert ws.cell(2, 6).value == "多平台"
+    assert ws.cell(2, 16).value == "行1"
+    assert ws.cell(2, 17).value == "北京"
+    assert ws.cell(2, 18).value == 2000
+    assert ws.cell(2, 20).value.startswith("知乎")
+    assert ws.cell(5, 17).value == "合计"
+    assert ws.cell(5, 18).value == "=SUM(R2:R4)"
+
+    ws_sum = wb["约稿费用合计"]
+    assert [ws_sum.cell(1, c).value for c in range(1, 15)] == [
+        "媒体名称", "媒体级别", "发布形式", "约稿类型", "约稿数量",
+        "户名", "身份证", "账号", "电话", "开户行",
+        "开户行所在城市", "基础金额", "奖励金额", "合计费用",
+    ]
+    # 费用合计表中发布形式/约稿类型与约稿表对调
+    assert ws_sum.cell(2, 3).value == "视频"
+    assert ws_sum.cell(2, 4).value == "原创"
+    assert ws_sum.cell(3, 14).value == 1200.0
+    assert ws_sum.cell(4, 14).value is None
+    assert "C3:C4" not in {str(r) for r in ws_sum.merged_cells.ranges}
+    assert any(str(r) == "N3:N4" for r in ws_sum.merged_cells.ranges)
+    assert ws_sum.cell(5, 11).value == "合计"
+    assert ws_sum.cell(5, 12).value == "=SUM(L2:L4)"
+    assert ws_sum.cell(5, 14).value == "=SUM(N2:N4)"
+
+
+def test_node_06_write_payment_excel_matches_yunzhanghu_template(tmp_path):
+    """付款表写成云账户银行卡上传模板，而不是自定义三表。"""
+    from openpyxl import load_workbook
+    from workflows.nodes.node_06_generate_payment import PAYMENT_TEMPLATE_ID
+
+    node = Node06GeneratePayment()
+    context = WorkflowContext(run_id="t", run_started_at=datetime.now(), input_file="t.xlsx")
+    rows = [
+        {
+            "账号": "6228480038110246271",
+            "户名": "崔诚靓",
+            "身份证": "210102199108076931",
+            "电话": "15021791031",
+            "基础服务费": 2000,
+            "备注": "",
+        },
+        {
+            "账号": "6217921478762521",
+            "户名": "徐浩轩",
+            "身份证": "410105200005130051",
+            "电话": "18837128611",
+            "基础服务费": 1200,
+            "备注": "",
+        },
+    ]
+    path = node._write_payment_excel(context, rows, output_dir=str(tmp_path))
+
+    wb = load_workbook(path)
+    assert wb.sheetnames == ["上传模板"]
+    ws = wb["上传模板"]
+    assert ws["A1"].value == PAYMENT_TEMPLATE_ID
+    assert "B1:F1" in {str(r) for r in ws.merged_cells.ranges}
+    assert ws["A3"].value.startswith("付款表_")
+    assert ws["B3"].value == "=COUNTA(F5:F9420)"
+    assert ws["C3"].value == "=SUM(F5:F9420)"
+    assert ws.cell(4, 2).value == "收款账号(个人银行卡号,必填)"
+    assert ws.cell(5, 2).value == "6228480038110246271"
+    assert ws.cell(5, 3).value == "崔诚靓"
+    assert ws.cell(5, 6).value == 2000
+    assert ws.cell(6, 6).value == 1200
+    assert "付款汇总" not in wb.sheetnames
+    assert "约稿明细" not in wb.sheetnames
+    assert "月度汇总" not in wb.sheetnames

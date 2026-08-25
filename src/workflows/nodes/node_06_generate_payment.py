@@ -1,26 +1,48 @@
-"""节点6: 生成付款表"""
+"""节点6: 生成约稿资料与云账户付款表"""
 
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from datetime import datetime
 from collections import defaultdict
 import os
 
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill
+
 from workflows.nodes.base import BaseNode
 from workflows.models import WorkflowContext, NodeOutput, NodeMetrics, Issue
-from workflows.services import get_logger, ExcelService
+from workflows.services import get_logger
 
 logger = get_logger()
+
+QUOTE_SHEET_HEADERS = [
+    "媒体名称", "媒体级别", "粉丝量", "发布形式", "约稿类型",
+    "平台", "标题", "发布链接", "作品截图", "发布日期",
+    "约稿数量", "户名", "身份证", "账号", "电话",
+    "开户行", "开户行所在城市", "基础金额", "奖励金额", "同步平台",
+]
+
+FEE_SUMMARY_HEADERS = [
+    "媒体名称", "媒体级别", "发布形式", "约稿类型", "约稿数量",
+    "户名", "身份证", "账号", "电话", "开户行",
+    "开户行所在城市", "基础金额", "奖励金额", "合计费用",
+]
+
+PAYMENT_TEMPLATE_ID = "TEMPLATE-BANK-YZH006"
+PAYMENT_TEMPLATE_HINT = (
+    "自助签约发起付款表格模板-银行卡(单个批次文件最大支持10000条订单,"
+    "单笔订单最大支持金额可在『业务中心-合作信息』中查看,请勿修改此条信息)"
+)
+PAYMENT_FORMULA_LAST_ROW = 9420
 
 
 class Node06GeneratePayment(BaseNode):
     """
-    生成付款表节点
+    生成约稿资料与付款表节点
 
     职责：
-    1. 按月度、按收款方汇总费用
-    2. 生成月度汇总表
-    3. 生成付款Excel文件
-    4. 保存输出文件路径
+    1. 按收款方汇总费用，生成云账户银行卡上传模板
+    2. 写出与 table/2-约稿资料.xlsx 对齐的约稿资料（约稿 + 约稿费用合计）
+    3. 保存输出文件路径
     """
 
     def __init__(self):
@@ -65,8 +87,8 @@ class Node06GeneratePayment(BaseNode):
                 count=len(payment_rows)
             )
 
-            # 3. 写入付款Excel文件
-            output_file = self._write_payment_excel(context, quote_details, payment_rows, monthly_summary)
+            # 3. 写入云账户付款上传模板
+            output_file = self._write_payment_excel(context, payment_rows)
             context.output_files["payment"] = output_file
 
             logger.info(
@@ -197,91 +219,95 @@ class Node06GeneratePayment(BaseNode):
 
             row = {
                 "收款方": payee,
+                "户名": payee,
                 "开户行": first_detail.get("开户行"),
                 "账号": first_detail.get("账号"),
+                "身份证": first_detail.get("身份证"),
                 "联系方式": first_detail.get("联系方式"),
+                "电话": first_detail.get("联系方式"),
                 "文章数": len(group_data["details"]),
                 "总费用": group_data["total_fee"],
-                "备注": f"包含{len(group_data['details'])}篇文章"
+                "基础服务费": group_data["total_fee"],
+                "备注": "",
             }
             payment_rows.append(row)
 
-        # 按总费用降序排列
-        payment_rows.sort(key=lambda x: x["总费用"], reverse=True)
-
+        # 按约稿资料中首次出现顺序，与样表 6-付款 一致
         return payment_rows
 
     def _write_payment_excel(
         self,
         context: WorkflowContext,
-        quote_details: List[Dict[str, Any]],
         payment_rows: List[Dict[str, Any]],
-        monthly_summary: Dict[str, Any]
+        output_dir: str = "./output",
     ) -> str:
-        """
-        写入付款Excel文件
-
-        Args:
-            context: 工作流上下文
-            quote_details: 约稿明细
-            payment_rows: 付款行数据
-            monthly_summary: 月度汇总
-
-        Returns:
-            输出文件路径
-        """
-        # 生成输出文件名
+        """写入云账户银行卡付款上传模板（对齐 table/6-付款.xlsx）。"""
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         output_filename = f"付款表_{timestamp}.xlsx"
-        output_path = os.path.join("./output", output_filename)
-
-        # 确保输出目录存在
-        os.makedirs("./output", exist_ok=True)
-
-        # 使用openpyxl创建Excel
-        from openpyxl import Workbook
+        batch_name = os.path.splitext(output_filename)[0]
+        output_path = os.path.join(output_dir, output_filename)
+        os.makedirs(output_dir, exist_ok=True)
 
         wb = Workbook()
+        ws = wb.active
+        ws.title = "上传模板"
 
-        # Sheet 1: 付款汇总
-        ws_payment = wb.active
-        ws_payment.title = "付款汇总"
+        header_font = Font(name="微软雅黑", size=12)
+        header_fill = PatternFill(fill_type="solid", fgColor="C6EFCE")
 
-        payment_headers = ["收款方", "开户行", "账号", "联系方式", "文章数", "总费用", "备注"]
-        for col_idx, header in enumerate(payment_headers, start=1):
-            ws_payment.cell(row=1, column=col_idx, value=header)
+        ws["A1"] = PAYMENT_TEMPLATE_ID
+        ws["A1"].font = header_font
+        ws["B1"] = PAYMENT_TEMPLATE_HINT
+        ws["B1"].font = header_font
+        ws.merge_cells("B1:F1")
 
-        for row_idx, row_data in enumerate(payment_rows, start=2):
-            for col_idx, header in enumerate(payment_headers, start=1):
-                self._set_cell_value(ws_payment, row_idx, col_idx, row_data.get(header, ""))
+        ws["A2"] = "批次号(与文件名称一致，必填)"
+        ws["B2"] = "总笔数"
+        ws["C2"] = "总金额/元(以显示金额汇总)"
+        for col in range(1, 4):
+            ws.cell(row=2, column=col).font = header_font
 
-        # Sheet 2: 约稿明细
-        ws_details = wb.create_sheet("约稿明细")
+        ws["A3"] = batch_name
+        ws["B3"] = f"=COUNTA(F5:F{PAYMENT_FORMULA_LAST_ROW})"
+        ws["C3"] = f"=SUM(F5:F{PAYMENT_FORMULA_LAST_ROW})"
+        for col in range(1, 4):
+            ws.cell(row=3, column=col).font = header_font
 
-        detail_headers = ["媒体", "平台", "标题", "发布日期", "链接", "媒体等级", "文章类型", "费用", "收款方", "截图"]
-        for col_idx, header in enumerate(detail_headers, start=1):
-            ws_details.cell(row=1, column=col_idx, value=header)
+        column_labels = [
+            "平台企业订单号(非必填)",
+            "收款账号(个人银行卡号,必填)",
+            "收款户名(真实姓名,必填)",
+            "身份证号(必填)",
+            "联系电话(签约手机号,必填)",
+            "基础服务费金额/元(四舍五入至分,必填)",
+            "备注(36个字符以内,非必填)",
+        ]
+        for col_idx, label in enumerate(column_labels, start=1):
+            cell = ws.cell(row=4, column=col_idx, value=label)
+            cell.font = header_font
+            cell.fill = header_fill
 
-        for row_idx, row_data in enumerate(quote_details, start=2):
-            for col_idx, header in enumerate(detail_headers, start=1):
-                self._set_cell_value(ws_details, row_idx, col_idx, row_data.get(header, ""))
+        for row_idx, row_data in enumerate(payment_rows, start=5):
+            ws.cell(row=row_idx, column=2, value=row_data.get("账号"))
+            ws.cell(row=row_idx, column=3, value=row_data.get("户名") or row_data.get("收款方"))
+            ws.cell(row=row_idx, column=4, value=row_data.get("身份证"))
+            ws.cell(row=row_idx, column=5, value=row_data.get("电话") or row_data.get("联系方式"))
+            fee = row_data.get("基础服务费")
+            if fee is None:
+                fee = row_data.get("总费用")
+            ws.cell(row=row_idx, column=6, value=fee)
+            ws.cell(row=row_idx, column=7, value=row_data.get("备注") or None)
+            ws.row_dimensions[row_idx].height = 22
 
-        # Sheet 3: 月度汇总
-        ws_monthly = wb.create_sheet("月度汇总")
+        ws.column_dimensions["A"].width = 22.38
+        ws.column_dimensions["B"].width = 41.54
+        ws.column_dimensions["C"].width = 14.38
+        ws.column_dimensions["D"].width = 21.62
+        ws.column_dimensions["E"].width = 18.54
+        ws.column_dimensions["F"].width = 11.92
+        ws.column_dimensions["G"].width = 29.5
 
-        monthly_headers = ["月份", "媒体数", "文章数", "总费用"]
-        for col_idx, header in enumerate(monthly_headers, start=1):
-            ws_monthly.cell(row=1, column=col_idx, value=header)
-
-        for row_idx, (month, data) in enumerate(sorted(monthly_summary.items()), start=2):
-            ws_monthly.cell(row=row_idx, column=1, value=month)
-            ws_monthly.cell(row=row_idx, column=2, value=data["媒体数"])
-            ws_monthly.cell(row=row_idx, column=3, value=data["文章数"])
-            ws_monthly.cell(row=row_idx, column=4, value=data["总费用"])
-
-        # 保存文件
         wb.save(output_path)
-
         return output_path
 
     @staticmethod
@@ -339,102 +365,159 @@ class Node06GeneratePayment(BaseNode):
     def _write_quote_detail_excel(
         self,
         context: WorkflowContext,
-        quote_details: List[Dict[str, Any]]
+        quote_details: List[Dict[str, Any]],
+        output_dir: str = "./output",
     ) -> str:
-        """
-        写入完善后的约稿资料Excel文件（模拟填写2-约稿资料表）
-
-        Args:
-            context: 工作流上下文
-            quote_details: 约稿明细数据
-
-        Returns:
-            输出文件路径
-        """
-        # 生成输出文件名
+        """写入约稿资料（对齐 table/2-约稿资料.xlsx：约稿 + 约稿费用合计）。"""
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         output_filename = f"2-约稿资料_完善版_{timestamp}.xlsx"
-        output_path = os.path.join("./output", output_filename)
-
-        # 确保输出目录存在
-        os.makedirs("./output", exist_ok=True)
-
-        # 使用openpyxl创建Excel
-        from openpyxl import Workbook
+        output_path = os.path.join(output_dir, output_filename)
+        os.makedirs(output_dir, exist_ok=True)
 
         wb = Workbook()
-
-        # Sheet: 约稿
         ws = wb.active
         ws.title = "约稿"
 
-        # 表头（对应2-约稿资料.xlsx的结构）
-        headers = [
-            "媒体名称", "媒体级别", "粉丝量", "发布形式", "约稿类型",
-            "平台", "标题", "发布链接", "作品截图", "发布日期",
-            "约稿数量", "户名", "身份证", "账号", "电话"
-        ]
-
-        for col_idx, header in enumerate(headers, start=1):
+        for col_idx, header in enumerate(QUOTE_SHEET_HEADERS, start=1):
             ws.cell(row=1, column=col_idx, value=header)
 
-        # 填充数据
+        last_data_row = 1
         for row_idx, detail in enumerate(quote_details, start=2):
-            # 从各节点汇总的数据中提取
-            ws.cell(row=row_idx, column=1, value=detail.get("媒体"))  # 媒体名称
-            ws.cell(row=row_idx, column=2, value=detail.get("媒体等级"))  # 媒体级别
-            ws.cell(row=row_idx, column=3, value=detail.get("粉丝量"))  # 粉丝量
-            ws.cell(row=row_idx, column=4, value=detail.get("发布形式", "原创"))  # 发布形式
-            ws.cell(row=row_idx, column=5, value=detail.get("文章类型"))  # 约稿类型
-            ws.cell(row=row_idx, column=6, value=detail.get("平台"))  # 平台
-            ws.cell(row=row_idx, column=7, value=detail.get("标题"))  # 标题
-            ws.cell(row=row_idx, column=8, value=detail.get("链接"))  # 发布链接
+            last_data_row = row_idx
+            base_amount = detail.get("基础金额")
+            if base_amount is None:
+                base_amount = detail.get("费用")
 
-            # 嵌入截图
-            screenshot_path = detail.get("截图")
-            if screenshot_path and os.path.exists(screenshot_path):
-                try:
-                    from openpyxl.drawing.image import Image
-                    from PIL import Image as PILImage
-                    from io import BytesIO
+            ws.cell(row=row_idx, column=1, value=detail.get("媒体"))
+            ws.cell(row=row_idx, column=2, value=detail.get("媒体等级"))
+            ws.cell(row=row_idx, column=3, value=detail.get("粉丝量"))
+            ws.cell(row=row_idx, column=4, value=detail.get("发布形式") or "原创")
+            ws.cell(row=row_idx, column=5, value=detail.get("文章类型"))
+            ws.cell(row=row_idx, column=6, value=detail.get("平台"))
+            ws.cell(row=row_idx, column=7, value=detail.get("标题"))
+            ws.cell(row=row_idx, column=8, value=detail.get("链接"))
+            self._embed_screenshot(ws, row_idx, detail.get("截图"))
+            ws.cell(row=row_idx, column=10, value=detail.get("发布日期"))
+            ws.cell(row=row_idx, column=11, value=1)
+            ws.cell(row=row_idx, column=12, value=detail.get("收款方"))
+            ws.cell(row=row_idx, column=13, value=detail.get("身份证"))
+            ws.cell(row=row_idx, column=14, value=detail.get("账号"))
+            ws.cell(row=row_idx, column=15, value=detail.get("联系方式"))
+            ws.cell(row=row_idx, column=16, value=detail.get("开户行"))
+            ws.cell(row=row_idx, column=17, value=detail.get("开户行所在城市"))
+            ws.cell(row=row_idx, column=18, value=base_amount)
+            ws.cell(row=row_idx, column=19, value=detail.get("奖励金额"))
+            ws.cell(row=row_idx, column=20, value=detail.get("同步平台"))
 
-                    # 使用PIL预先缩放图片
-                    original_img = PILImage.open(screenshot_path)
-                    ratio = original_img.size[0] / original_img.size[1]
-                    new_height = 100
-                    new_width = int(new_height * ratio)
+        footer_row = last_data_row + 1
+        if last_data_row >= 2:
+            ws.cell(row=footer_row, column=17, value="合计")
+            ws.cell(row=footer_row, column=18, value=f"=SUM(R2:R{last_data_row})")
 
-                    # 缩放图片
-                    resized_img = original_img.resize((new_width, new_height), PILImage.LANCZOS)
+        ws_sum = wb.create_sheet("约稿费用合计")
+        for col_idx, header in enumerate(FEE_SUMMARY_HEADERS, start=1):
+            ws_sum.cell(row=1, column=col_idx, value=header)
 
-                    # 保存到内存
-                    img_bytes = BytesIO()
-                    resized_img.save(img_bytes, format='PNG')
-                    img_bytes.seek(0)
+        for row_idx, detail in enumerate(quote_details, start=2):
+            base_amount = detail.get("基础金额")
+            if base_amount is None:
+                base_amount = detail.get("费用")
+            reward = detail.get("奖励金额") or 0
+            try:
+                total_fee = float(base_amount or 0) + float(reward or 0)
+            except (TypeError, ValueError):
+                total_fee = base_amount
 
-                    # 嵌入图片（直接从BytesIO）
-                    img = Image(img_bytes)
-                    img.anchor = f'I{row_idx}'
-                    ws.add_image(img)
+            # 约稿费用合计中这两列与「约稿」表对调：发布形式=视频/图文，约稿类型=原创/通稿
+            ws_sum.cell(row=row_idx, column=1, value=detail.get("媒体"))
+            ws_sum.cell(row=row_idx, column=2, value=detail.get("媒体等级"))
+            ws_sum.cell(row=row_idx, column=3, value=detail.get("文章类型"))
+            ws_sum.cell(row=row_idx, column=4, value=detail.get("发布形式") or "原创")
+            ws_sum.cell(row=row_idx, column=5, value=1)
+            ws_sum.cell(row=row_idx, column=6, value=detail.get("收款方"))
+            ws_sum.cell(row=row_idx, column=7, value=detail.get("身份证"))
+            ws_sum.cell(row=row_idx, column=8, value=detail.get("账号"))
+            ws_sum.cell(row=row_idx, column=9, value=detail.get("联系方式"))
+            ws_sum.cell(row=row_idx, column=10, value=detail.get("开户行"))
+            ws_sum.cell(row=row_idx, column=11, value=detail.get("开户行所在城市"))
+            ws_sum.cell(row=row_idx, column=12, value=base_amount)
+            ws_sum.cell(row=row_idx, column=13, value=detail.get("奖励金额"))
+            ws_sum.cell(row=row_idx, column=14, value=total_fee)
 
-                    # 设置行高
-                    ws.row_dimensions[row_idx].height = 75
-                except Exception as e:
-                    logger.warning("screenshot_embed_failed", path=screenshot_path, error=str(e))
-                    # 失败时回退到路径
-                    ws.cell(row=row_idx, column=9, value=screenshot_path)
-            else:
-                # 无截图或文件不存在，留空
-                ws.cell(row=row_idx, column=9, value="")
+        self._merge_payee_totals(ws_sum, quote_details)
 
-            ws.cell(row=row_idx, column=10, value=detail.get("发布日期"))  # 发布日期
-            ws.cell(row=row_idx, column=11, value=1)  # 约稿数量（默认1）
-            ws.cell(row=row_idx, column=12, value=detail.get("收款方"))  # 户名
-            ws.cell(row=row_idx, column=13, value=detail.get("身份证"))  # 身份证
-            ws.cell(row=row_idx, column=14, value=detail.get("账号"))  # 账号
-            ws.cell(row=row_idx, column=15, value=detail.get("联系方式"))  # 电话
+        if last_data_row >= 2:
+            ws_sum.cell(row=footer_row, column=11, value="合计")
+            ws_sum.cell(row=footer_row, column=12, value=f"=SUM(L2:L{last_data_row})")
+            ws_sum.cell(row=footer_row, column=14, value=f"=SUM(N2:N{last_data_row})")
 
-        # 保存文件
         wb.save(output_path)
-
         return output_path
+
+    def _embed_screenshot(self, ws, row_idx: int, screenshot_path: Optional[str]) -> None:
+        if screenshot_path and os.path.exists(screenshot_path):
+            try:
+                from openpyxl.drawing.image import Image
+                from PIL import Image as PILImage
+                from io import BytesIO
+
+                original_img = PILImage.open(screenshot_path)
+                ratio = original_img.size[0] / original_img.size[1]
+                new_height = 100
+                new_width = int(new_height * ratio)
+                resized_img = original_img.resize((new_width, new_height), PILImage.LANCZOS)
+                img_bytes = BytesIO()
+                resized_img.save(img_bytes, format="PNG")
+                img_bytes.seek(0)
+                img = Image(img_bytes)
+                img.anchor = f"I{row_idx}"
+                ws.add_image(img)
+                ws.row_dimensions[row_idx].height = 75
+                return
+            except Exception as e:
+                logger.warning("screenshot_embed_failed", path=screenshot_path, error=str(e))
+                ws.cell(row=row_idx, column=9, value=screenshot_path)
+                return
+        ws.cell(row=row_idx, column=9, value="")
+
+    @staticmethod
+    def _merge_payee_totals(ws, quote_details: List[Dict[str, Any]]) -> None:
+        """同一户名连续行合并「合计费用」，金额写在合并区第一格。"""
+        if not quote_details:
+            return
+
+        def payee_of(detail: Dict[str, Any]) -> str:
+            return str(detail.get("收款方") or "")
+
+        def amount_of(detail: Dict[str, Any]) -> float:
+            base = detail.get("基础金额")
+            if base is None:
+                base = detail.get("费用") or 0
+            reward = detail.get("奖励金额") or 0
+            try:
+                return float(base or 0) + float(reward or 0)
+            except (TypeError, ValueError):
+                return 0.0
+
+        start = 0
+        while start < len(quote_details):
+            end = start
+            current = payee_of(quote_details[start])
+            total = amount_of(quote_details[start])
+            while end + 1 < len(quote_details) and payee_of(quote_details[end + 1]) == current and current:
+                end += 1
+                total += amount_of(quote_details[end])
+
+            first_excel_row = start + 2
+            last_excel_row = end + 2
+            ws.cell(row=first_excel_row, column=14, value=total)
+            for row_idx in range(first_excel_row + 1, last_excel_row + 1):
+                ws.cell(row=row_idx, column=14, value=None)
+            if last_excel_row > first_excel_row:
+                ws.merge_cells(
+                    start_row=first_excel_row,
+                    start_column=14,
+                    end_row=last_excel_row,
+                    end_column=14,
+                )
+            start = end + 1
