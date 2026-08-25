@@ -3,6 +3,7 @@
 import pytest
 from datetime import datetime
 from workflows.models import WorkflowContext
+from workflows.nodes.node_00_input import Node00Input
 from workflows.nodes.node_02_fill_publication import Node02FillPublication
 from workflows.nodes.node_03_match_media import Node03MatchMedia
 from workflows.nodes.node_04_match_account import Node04MatchAccount
@@ -135,6 +136,37 @@ def test_workflow_with_all_nodes(base_context):
     node6 = Node06GeneratePayment()
     assert node6.node_id == "node_06"
     assert node6.node_name == "生成付款表"
+
+
+def test_node_00_applies_frontend_media_name_correction(monkeypatch, tmp_path):
+    """前端按原Excel行号提交修正后，节点0应使用新媒体名重新校验。"""
+    input_file = tmp_path / "1-链接.xlsx"
+    input_file.touch()
+    for filename in ["3-媒体库.xlsx", "4-账户信息.xlsx", "5-费用.xlsx"]:
+        (tmp_path / filename).touch()
+
+    monkeypatch.setattr(
+        "workflows.nodes.node_00_input.ExcelService.read_link_sheet",
+        lambda *_args, **_kwargs: [{
+            "主题": "主题1", "媒体": "Oxgen", "row_number": 2,
+            "链接": ["https://example.com/1"],
+        }],
+    )
+    monkeypatch.setattr(
+        "workflows.nodes.node_00_input.ExcelService.read_sheet_as_dicts",
+        lambda *_args, **_kwargs: [{"媒体名称": "Oxygen"}],
+    )
+    context = WorkflowContext(
+        run_id="test-correction",
+        input_file=str(input_file),
+        table_dir=str(tmp_path),
+        config={"media_name_corrections": {"2": "Oxygen"}},
+    )
+
+    output = Node00Input().process(context)
+
+    assert output.data["records"][0]["媒体"] == "Oxygen"
+    assert not any(issue.code == "MEDIA_NOT_IN_LIBRARY" for issue in output.issues)
 
 
 # ============================================================
@@ -441,6 +473,7 @@ def test_node_05_display_platform_and_sync_text():
 def test_node_05_quote_details_include_sample_fields(monkeypatch, base_context):
     """费用明细需带上表2所需的开户行、城市、基础金额、同步平台。"""
     base_context.records[0].update({
+        "processable": True,
         "媒体等级": "FA",
         "文章类型": "视频",
         "发布形式": "原创",
@@ -474,6 +507,49 @@ def test_node_05_quote_details_include_sample_fields(monkeypatch, base_context):
     assert "知乎 https://zhihu.com/p/1" in detail["同步平台"]
     assert detail["发布形式"] is None
     assert detail["截图"] is None
+    assert detail["eligible_for_monthly_summary"] is True
+    assert base_context.quote_details["excluded_count"] == 0
+
+
+def test_node_05_excludes_unprocessable_records_from_quote_and_monthly_data(monkeypatch, base_context):
+    """仍有错误或待确认的记录不得形成费用明细，也不得进入月度统计。"""
+    base_context.records[0].update({
+        "processable": False,
+        "媒体等级": "FA",
+        "文章类型": "视频",
+        "发布日期": "2026-08-20",
+        "media_match_status": "pending_confirmation",
+    })
+    monkeypatch.setattr(
+        "workflows.nodes.node_05_calculate_fee.ExcelService.read_sheet_as_dicts",
+        lambda _: [{"等级": "FA", "视频费用": 2000}],
+    )
+
+    output = Node05CalculateFee().process(base_context)
+
+    assert output.success is True
+    assert base_context.quote_details["details"] == []
+    assert base_context.quote_details["total_count"] == 0
+    assert base_context.quote_details["total_fee"] == 0
+    assert base_context.quote_details["excluded_count"] == 1
+
+
+def test_node_06_monthly_summary_ignores_ineligible_details():
+    node = Node06GeneratePayment()
+    details = [
+        {
+            "媒体": "正常媒体", "发布日期": "2026-08-20", "费用": 2000,
+            "eligible_for_monthly_summary": True,
+        },
+        {
+            "媒体": "异常媒体", "发布日期": "2026-08-20", "费用": 99999,
+            "eligible_for_monthly_summary": False,
+        },
+    ]
+
+    summary = node._generate_monthly_summary(details)
+
+    assert summary["2026-08"] == {"媒体数": 1, "文章数": 1, "总费用": 2000.0}
 
 
 def test_node_06_payment_rows_preserve_first_seen_order():

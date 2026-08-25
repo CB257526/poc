@@ -65,7 +65,20 @@ class Node06GeneratePayment(BaseNode):
             issues.append(issue)
             return NodeOutput.create_failure(metrics=metrics, issues=issues)
 
-        quote_details = context.quote_details["details"]
+        # 防御性二次过滤：即使上游或历史数据意外混入异常明细，也不进入
+        # 月度汇总、付款文件或约稿输出。
+        quote_details = [
+            detail for detail in context.quote_details["details"]
+            if detail.get("eligible_for_monthly_summary") is True
+        ]
+        if not quote_details:
+            issue = Issue(
+                level="critical",
+                code="NO_ELIGIBLE_QUOTE_DETAILS",
+                message="没有校验通过的约稿明细，异常数据不会计入月度汇总",
+                node_id=self.node_id,
+            )
+            return NodeOutput.create_failure(metrics=metrics, issues=[issue])
         metrics.processed_count = len(quote_details)
 
         try:
@@ -88,7 +101,8 @@ class Node06GeneratePayment(BaseNode):
             )
 
             # 3. 写入云账户付款上传模板
-            output_file = self._write_payment_excel(context, payment_rows)
+            output_dir = context.config.get("output_dir", "./output")
+            output_file = self._write_payment_excel(context, payment_rows, output_dir=output_dir)
             context.output_files["payment"] = output_file
 
             logger.info(
@@ -97,7 +111,7 @@ class Node06GeneratePayment(BaseNode):
             )
 
             # 4. 写入完善后的约稿资料表
-            quote_file = self._write_quote_detail_excel(context, quote_details)
+            quote_file = self._write_quote_detail_excel(context, quote_details, output_dir=output_dir)
             context.output_files["quote_detail"] = quote_file
 
             logger.info(
@@ -161,6 +175,8 @@ class Node06GeneratePayment(BaseNode):
         })
 
         for detail in details:
+            if detail.get("eligible_for_monthly_summary") is not True:
+                continue
             publish_date = detail.get("发布日期")
             media = detail.get("媒体")
             fee = detail.get("费用", 0)
