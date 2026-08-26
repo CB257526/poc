@@ -3,6 +3,7 @@ import { api } from "../api";
 import { ApiError, downloadBlob } from "../api/client";
 import { Hero, StatusPill } from "../components/ui";
 import type { Task } from "../types";
+import { TASK_STATUS_LABEL } from "../types";
 
 export function ExportsPage() {
   const [task, setTask] = useState<Task | null>(null);
@@ -15,7 +16,7 @@ export function ExportsPage() {
       .catch((err: unknown) => setError(err instanceof ApiError ? err.message : "加载失败"));
   }, []);
 
-  const ready = task?.status === "completed" && (task.files?.length ?? 0) > 0;
+  const ready = task?.status === "completed" && (task.files ?? []).some((file) => file.ready);
 
   async function download(fileKey: string, filename: string) {
     if (!task) return;
@@ -55,27 +56,27 @@ export function ExportsPage() {
             <div className="file-row" key={file.key}>
               <span>✓ &nbsp; {file.filename}</span>
               <span style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                <StatusPill kind="done">后端已生成</StatusPill>
-                <button className="btn primary" disabled={busyKey === file.key} onClick={() => void download(file.key, file.filename)}>
+                <StatusPill kind={file.ready ? "done" : "warn"}>{file.ready ? "已生成" : "未生成"}</StatusPill>
+                <button
+                  className="btn primary"
+                  disabled={!file.ready || busyKey === file.key}
+                  onClick={() => void download(file.key, file.filename)}
+                >
                   {busyKey === file.key ? "下载中…" : "下载"}
                 </button>
               </span>
             </div>
           ))
         ) : (
-          <>
-            <p style={{ color: "var(--muted)" }}>当前显示演示结果；上传真实文件并等待任务完成后，将自动切换为真实文件。</p>
-            {["2-约稿资料_完成版.xlsx", "6-付款.xlsx"].map((name) => (
-              <div className="file-row" key={name}>
-                <span>✓ &nbsp; {name}</span>
-                <StatusPill kind="done">演示文件</StatusPill>
-              </div>
-            ))}
-          </>
+          <p className="empty">
+            {task
+              ? `最近任务「${TASK_STATUS_LABEL[task.status]}」，完成后可下载约稿资料和付款文件。`
+              : "尚无已完成任务。请先在「数据处理」上传链接表。"}
+          </p>
         )}
       </div>
-      {task ? (
-        <button className="btn primary" disabled={!ready || busyKey === "archive"} onClick={() => void downloadZip()}>
+      {ready ? (
+        <button className="btn primary" disabled={busyKey === "archive"} onClick={() => void downloadZip()}>
           {busyKey === "archive" ? "打包中…" : "下载全部结果（ZIP）"}
         </button>
       ) : null}

@@ -1,6 +1,6 @@
 # 约稿平台 · 前端所需 API 说明书
 
-本文档描述 **React 前端已经调用、后端必须实现** 的 HTTP 接口。实现时请以本文为准，不要再以 Streamlit `app.py` 的临时约定为准。
+本文档是 React 前端与 `src/workflows/backend` 的 HTTP 合同。实现以后端代码为准，字段与路径必须保持一致。
 
 - 基础路径：`/api/v1`
 - 协议：HTTPS（本地 HTTP 即可）
@@ -90,7 +90,7 @@ GET /resource?page=1&page_size=50
 
 ## 2. 鉴权
 
-Token 建议 JWT。`access_token` 有效期 2 小时，`refresh_token` 7 天。前端目前只存 token，**尚未调用刷新接口**；请先实现登录 / 我 / 登出。刷新接口列为可选。
+Token 建议 JWT。`access_token` 有效期 2 小时，`refresh_token` 7 天。前端目前只存 token，登录后用 access 调接口；刷新接口后端已实现，前端暂未自动续期。
 
 ### 2.1 登录
 

@@ -1,13 +1,14 @@
 import { useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
-import { DEMO_PASSWORD } from "../mock/data";
+
+const SEED_PASSWORD = "Passw0rd!";
 
 export function LoginPage() {
   const { login, error } = useAuth();
   const navigate = useNavigate();
   const [email, setEmail] = useState("operator@byd.local");
-  const [password, setPassword] = useState(DEMO_PASSWORD);
+  const [password, setPassword] = useState(SEED_PASSWORD);
   const [submitting, setSubmitting] = useState(false);
 
   async function onSubmit(event: FormEvent) {
@@ -46,12 +47,11 @@ export function LoginPage() {
           还没有账号？<Link to="/register">申请注册</Link>
         </div>
         <div className="demo-accounts">
-          演示账号（密码均为 <code>{DEMO_PASSWORD}</code>）
+          种子账号（密码均为 <code>{SEED_PASSWORD}</code>）
           <br />admin@byd.local 管理员
           <br />operator@byd.local 业务人员
           <br />finance@byd.local 财务
           <br />viewer@byd.local 只读
-          <br />new.user@byd.local 待审核（无法登录）
         </div>
       </div>
     </div>

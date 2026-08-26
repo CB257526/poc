@@ -37,12 +37,7 @@ export function clearTokens() {
   localStorage.removeItem(REFRESH_KEY);
 }
 
-const useMock = import.meta.env.VITE_USE_MOCK !== "false";
 const apiBase = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
-
-export function isMockEnabled() {
-  return useMock;
-}
 
 async function parseError(response: Response): Promise<ApiError> {
   try {
@@ -66,7 +61,9 @@ export async function request<T>(
     const token = getAccessToken();
     if (token) headers.set("Authorization", `Bearer ${token}`);
   }
-  if (init.body && !(init.body instanceof FormData) && !(init.body instanceof Blob) && !headers.has("Content-Type")) {
+  const isForm = init.body instanceof FormData;
+  const isBlob = init.body instanceof Blob && !(init.body instanceof FormData);
+  if (init.body && !isForm && !isBlob && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
 
@@ -80,7 +77,9 @@ export async function request<T>(
   if (!response.ok) throw await parseError(response);
   if (options.raw) return response as T;
   if (response.status === 204) return undefined as T;
-  return (await response.json()) as T;
+  const text = await response.text();
+  if (!text) return undefined as T;
+  return JSON.parse(text) as T;
 }
 
 export async function requestBlob(path: string): Promise<Blob> {

@@ -92,6 +92,7 @@ export function ExceptionsPage() {
       <div className="panel">
         <h2>待处理事项</h2>
         <p style={{ color: "var(--muted)" }}>点击右侧状态按钮打开对应核验表；红色标记表示需要人工修改或确认的数据。</p>
+        {items.length === 0 ? <p className="empty">暂无费用一致性异常。</p> : null}
         {items.map((item) => (
           <div className="file-row" key={item.exception_id}>
             <div>
@@ -112,39 +113,43 @@ export function ExceptionsPage() {
         <div className="panel">
           <h2>处理异常 · {selected.target}</h2>
           <div className="alert error">需要处理：{selected.issue}</div>
-          <h3>① 异常定位与计算依据</h3>
-          <div className="table-wrap">
-            <table className="data">
-              <thead>
-                <tr>
-                  <th>媒体名称</th>
-                  <th>发布平台</th>
-                  <th>内容类型</th>
-                  <th>作品数量</th>
-                  <th>匹配费用规则</th>
-                  <th>核定单价</th>
-                  <th>应计费用</th>
-                </tr>
-              </thead>
-              <tbody>
-                {selected.calculation.map((row, index) => (
-                  <tr key={`${row.media_name}-${index}`}>
-                    <td>{row.media_name}</td>
-                    <td>{row.platform}</td>
-                    <td>{row.content_type}</td>
-                    <td>{row.work_count}</td>
-                    <td>{row.fee_rule}</td>
-                    <td>{yuan(row.unit_price)}</td>
-                    <td>{yuan(row.expected_fee)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <div className="alert info">
-            系统计算依据：{selected.calculation[0]?.media_name} 共 {selected.calculation.reduce((s, r) => s + r.work_count, 0)} 条
-            × 核定单价 {yuan(selected.calculation[0]?.unit_price ?? 0)} = 应计费用 {yuan(selected.calculation.reduce((s, r) => s + r.expected_fee, 0))}。
-          </div>
+          {selected.calculation.length ? (
+            <>
+              <h3>① 异常定位与计算依据</h3>
+              <div className="table-wrap">
+                <table className="data">
+                  <thead>
+                    <tr>
+                      <th>媒体名称</th>
+                      <th>发布平台</th>
+                      <th>内容类型</th>
+                      <th>作品数量</th>
+                      <th>匹配费用规则</th>
+                      <th>核定单价</th>
+                      <th>应计费用</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {selected.calculation.map((row, index) => (
+                      <tr key={`${row.media_name}-${index}`}>
+                        <td>{row.media_name}</td>
+                        <td>{row.platform}</td>
+                        <td>{row.content_type}</td>
+                        <td>{row.work_count}</td>
+                        <td>{row.fee_rule}</td>
+                        <td>{yuan(row.unit_price)}</td>
+                        <td>{yuan(row.expected_fee)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="alert info">
+                系统计算依据：{selected.calculation[0].media_name} 共 {selected.calculation.reduce((s, r) => s + r.work_count, 0)} 条
+                × 核定单价 {yuan(selected.calculation[0].unit_price)} = 应计费用 {yuan(selected.calculation.reduce((s, r) => s + r.expected_fee, 0))}。
+              </div>
+            </>
+          ) : null}
           <h3>② 两个子表逐媒体对照</h3>
           <div className="grid-2">
             <div>

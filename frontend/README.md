@@ -1,17 +1,17 @@
 # 约稿平台前端（React）
 
-由 `app.py`（Streamlit POC）迁移而来的 React 单页应用。业务页面、处理流程、费用统计口径与原 Streamlit 版一致；额外补齐了登录 / 注册、角色权限、基础配置与用户管理。
+对接 `src/workflows/backend` 的 FastAPI（`/api/v1`）。页面与角色权限见 `docs/API.md`。
 
-Streamlit 源码仍保留在 `app.py`，仅作对照，不再作为运行入口。
+## 启动
 
-## 技术栈
+先起后端（仓库根目录）：
 
-- Vite 7 + React 19 + TypeScript
-- React Router 7
-- Recharts（柱状图 / 折线图）
-- 无 UI 组件库，样式对齐原 POC：品牌蓝 `#165DFF`、侧栏 `#102A56`
+```bash
+uv sync
+PYTHONPATH=src uv run uvicorn workflows.backend.main:app --host 0.0.0.0 --port 8000
+```
 
-## 本地启动
+再起前端：
 
 ```bash
 cd frontend
@@ -20,31 +20,18 @@ npm install
 npm run dev
 ```
 
-浏览器打开 `http://127.0.0.1:5173`。
+打开 `http://127.0.0.1:5173`。`VITE_API_BASE_URL` 默认 `http://127.0.0.1:8000`。开发时也可留空，走 Vite 代理 `/api` → 8000。
 
-默认 `VITE_USE_MOCK=true`，不依赖后端即可走完全部页面。
+## 种子账号
 
-对接真实后端时：
+密码均为 `Passw0rd!`（后端 `seed.py` 写入）
 
-```bash
-# .env
-VITE_API_BASE_URL=http://127.0.0.1:8000
-VITE_USE_MOCK=false
-```
-
-开发代理：`/api` → `http://127.0.0.1:8000`（见 `vite.config.ts`）。后端需允许前端来源 CORS。
-
-## 演示账号
-
-密码均为 `Passw0rd!`
-
-| 邮箱 | 角色 | 说明 |
-| --- | --- | --- |
-| admin@byd.local | 管理员 | 全部页面 + 配置 / 用户审核 |
-| operator@byd.local | 业务人员 | 上传处理、异常核验、导出 |
-| finance@byd.local | 财务 | 查看资料 / 费用、下载付款文件 |
-| viewer@byd.local | 只读访客 | 仅概览、约稿资料、费用分析 |
-| new.user@byd.local | 待审核 | 无法登录 |
+| 邮箱 | 角色 |
+| --- | --- |
+| admin@byd.local | 管理员 |
+| operator@byd.local | 业务人员 |
+| finance@byd.local | 财务 |
+| viewer@byd.local | 只读 |
 
 注册新账号后状态为「待审核」，需管理员在「用户管理」通过。
 
@@ -62,9 +49,9 @@ VITE_USE_MOCK=false
 | `/config` | 基础配置 | ✓ | | | |
 | `/users` | 用户管理 | ✓ | | | |
 
-无权限访问时展示「无访问权限」，侧栏不显示对应入口。
+无权限访问时展示「无访问权限」，侧栏不显示对应入口。无任务时页面展示空态，不再使用演示数据。
 
-## 业务处理流程（与原 Streamlit 一致）
+## 业务处理流程
 
 ```text
 上传 1-链接.xlsx
@@ -86,13 +73,11 @@ POST /api/v1/tasks/validate   节点0 输入预检
 
 ```text
 frontend/
-├── app.py                 # 原 Streamlit，仅对照
-├── docs/API.md            # 前端所需后端接口（后端开发以这份为准）
+├── docs/API.md            # 前后端 HTTP 合同
 ├── src/
-│   ├── api/               # HTTP 客户端 + Mock 实现
+│   ├── api/               # 真实后端客户端
 │   ├── auth/              # 登录态、路由守卫
 │   ├── layout/            # 侧栏布局
-│   ├── mock/data.ts       # 演示数据
 │   ├── pages/             # 各业务页
 │   └── types/             # 与接口对齐的类型
 ├── env.example

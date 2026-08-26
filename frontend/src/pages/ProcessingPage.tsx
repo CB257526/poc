@@ -25,12 +25,19 @@ export function ProcessingPage() {
 
   useEffect(() => {
     api.configStatus().then(setConfig).catch(() => undefined);
+    api.latestTask()
+      .then((latest) => {
+        if (latest && ["running", "completed", "failed", "needs_correction", "ready"].includes(latest.status)) {
+          setTask(latest);
+        }
+      })
+      .catch(() => undefined);
   }, []);
 
   useEffect(() => {
     if (!task || task.status !== "running") return;
     const timer = window.setInterval(() => {
-      void api.getTask(task.task_id).then(setTask);
+      void api.getTask(task.task_id).then(setTask).catch(() => undefined);
     }, 1500);
     return () => window.clearInterval(timer);
   }, [task]);
@@ -41,9 +48,14 @@ export function ProcessingPage() {
   );
 
   async function start() {
+    if (!file) {
+      setError("请先选择 1-链接.xlsx");
+      return;
+    }
     setBusy(true);
     setError("");
     setMessage("");
+    setTask(null);
     try {
       const payload = await api.validateTask(file);
       setValidate(payload);
@@ -93,30 +105,43 @@ export function ProcessingPage() {
     if (fileRef.current) fileRef.current.value = "";
   }
 
-  const progress = task ? task.progress.completed_nodes.length / task.progress.total_nodes : 0;
+  const progress = task && task.progress.total_nodes
+    ? task.progress.completed_nodes.length / task.progress.total_nodes
+    : 0;
 
   return (
     <>
       <Hero title="数据处理" subtitle="上传本次链接表，系统自动生成约稿资料、费用汇总和付款文件" />
       <div className="panel">
         <h2>本次任务文件</h2>
-        <p style={{ color: "var(--muted)" }}>业务人员每次只需上传链接表。未选择文件时，演示模式会用一条媒体名有误的模拟数据。</p>
+        <p style={{ color: "var(--muted)" }}>业务人员每次只需上传链接表。媒体名称修正不会改写原始 Excel。</p>
         <label className="field">
           1-链接.xlsx
-          <input ref={fileRef} type="file" accept=".xlsx" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".xlsx"
+            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+          />
         </label>
+        {file ? <p style={{ color: "var(--muted)", marginTop: 8 }}>已选择：{file.name}</p> : null}
       </div>
       <div className="panel">
         <h3>基础配置状态</h3>
         <div className="grid-3">
           {(config?.files ?? []).map((item) => (
             <div key={item.kind}>
-              {item.configured ? <StatusPill kind="done">{item.label} · 已配置</StatusPill> : <StatusPill kind="warn">{item.label} · 未配置</StatusPill>}
+              {item.configured
+                ? <StatusPill kind="done">{item.label} · 已配置</StatusPill>
+                : <StatusPill kind="warn">{item.label} · 未配置</StatusPill>}
             </div>
           ))}
         </div>
+        {config && !config.all_ready ? (
+          <p className="alert warn">基础配置未齐，预检可能失败。请管理员先到「基础配置」上传媒体库、账户和费用表。</p>
+        ) : null}
       </div>
-      <button className="btn primary" disabled={busy} onClick={() => void start()}>
+      <button className="btn primary" disabled={busy || !file} onClick={() => void start()}>
         {busy ? "处理中…" : "开始自动处理  →"}
       </button>
       {message ? <div className="alert info">{message}</div> : null}
@@ -140,29 +165,31 @@ export function ProcessingPage() {
                 </tr>
               </thead>
               <tbody>
-                {validate.records.map((row: MediaRecord) => (
-                  <tr key={row.record_id} className={row.match_status === "unmatched" ? "mismatch" : undefined}>
-                    <td>{row.row_number}</td>
-                    <td>{row.topic}</td>
-                    <td>
-                      <select
-                        value={names[String(row.row_number)] ?? row.media_name}
-                        onChange={(e) => setNames((prev) => ({ ...prev, [String(row.row_number)]: e.target.value }))}
-                      >
-                        {!validate.allowed_media_names.includes(names[String(row.row_number)] ?? row.media_name) ? (
-                          <option value={row.media_name}>{row.media_name}（当前值）</option>
-                        ) : null}
-                        {validate.allowed_media_names.map((name) => (
-                          <option key={name} value={name}>{name}</option>
-                        ))}
-                      </select>
-                    </td>
-                    <td>{row.link_count}</td>
-                    <td>{row.link_preview}</td>
-                    <td>{(names[String(row.row_number)] ?? row.media_name) && validate.allowed_media_names.includes(names[String(row.row_number)] ?? row.media_name) ? "✓ 已匹配" : "未匹配"}</td>
-                    <td>{row.suggested_name}</td>
-                  </tr>
-                ))}
+                {validate.records.map((row: MediaRecord) => {
+                  const current = names[String(row.row_number)] ?? row.media_name;
+                  const matched = validate.allowed_media_names.includes(current);
+                  return (
+                    <tr key={row.record_id} className={matched ? undefined : "mismatch"}>
+                      <td>{row.row_number}</td>
+                      <td>{row.topic}</td>
+                      <td>
+                        <select
+                          value={current}
+                          onChange={(e) => setNames((prev) => ({ ...prev, [String(row.row_number)]: e.target.value }))}
+                        >
+                          {!matched ? <option value={row.media_name}>{row.media_name}（当前值）</option> : null}
+                          {validate.allowed_media_names.map((name) => (
+                            <option key={name} value={name}>{name}</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td>{row.link_count}</td>
+                      <td>{row.link_preview}</td>
+                      <td>{matched ? "✓ 已匹配" : "未匹配"}</td>
+                      <td>{row.suggested_name}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
