@@ -3,10 +3,14 @@
 from workflows.nodes.base import BaseNode
 from workflows.models import WorkflowContext, NodeOutput, Issue
 from workflows.services import ExcelService, get_logger
+from workflows.utils.url_spec import (
+    URL_PATTERN,
+    format_invalid_url_message,
+    invalid_link_findings,
+)
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlparse, parse_qsl
 import os
-import re
 
 logger = get_logger()
 
@@ -22,9 +26,6 @@ TRACKING_PARAMS = {
     "spm", "spm_id_from", "vd_source", "seid",
     "from", "ref", "refer", "source",
 }
-
-# 从链接文本中提取 URL：排除空白与中文，避免把"知乎："这类前缀或尾部说明吃进来
-URL_PATTERN = re.compile(r'https?://[^\s一-龥]+')
 
 
 class Node00Input(BaseNode):
@@ -203,6 +204,8 @@ class Node00Input(BaseNode):
                         }
                     ))
 
+            issues.extend(self._validate_record_links(record_id, row))
+
             # 创建记录（read_link_sheet 已按媒体聚合，每条记录即一个媒体块，
             # 链接为列表，供 Node1 逐条解析并合并主链接+同步链接）
             record = {
@@ -344,6 +347,33 @@ class Node00Input(BaseNode):
             merged.append(merged_row)
 
         return merged
+
+    def _validate_record_links(self, record_id: str, row: Dict[str, Any]) -> List[Issue]:
+        """校验表1原始链接文本是否符合 URL 规范，不做自动纠正。"""
+        issues: List[Issue] = []
+        for finding in invalid_link_findings(self._link_texts(row)):
+            issues.append(Issue(
+                level="error",
+                code="INVALID_URL",
+                message=format_invalid_url_message(finding),
+                node_id=self.node_id,
+                record_id=record_id,
+                details={
+                    "url": finding.url,
+                    "raw_text": finding.text,
+                    "reasons": finding.reasons,
+                    "row_number": row.get("row_number"),
+                    "media_name": row.get("媒体"),
+                },
+            ))
+        return issues
+
+    @staticmethod
+    def _link_texts(row: Dict[str, Any]) -> List[str]:
+        links = row.get("链接") or []
+        if isinstance(links, str):
+            return [links] if links.strip() else []
+        return [str(item) for item in links if item and str(item).strip()]
 
     def _normalize_url(self, link_text: str) -> str:
         """

@@ -169,6 +169,80 @@ def test_node_00_applies_frontend_media_name_correction(monkeypatch, tmp_path):
     assert not any(issue.code == "MEDIA_NOT_IN_LIBRARY" for issue in output.issues)
 
 
+def test_node_00_rejects_malformed_original_urls(monkeypatch, tmp_path):
+    """表1 原始链接必须符合 URL 规范：ww、全角小数点等应报 INVALID_URL。"""
+    input_file = tmp_path / "1-链接.xlsx"
+    input_file.touch()
+    for filename in ["3-媒体库.xlsx", "4-账户信息.xlsx", "5-费用.xlsx"]:
+        (tmp_path / filename).touch()
+
+    monkeypatch.setattr(
+        "workflows.nodes.node_00_input.ExcelService.read_link_sheet",
+        lambda *_args, **_kwargs: [{
+            "主题": "主题1",
+            "媒体": "Oxygen",
+            "row_number": 2,
+            "链接": [
+                "知乎：https://ww.zhihu.com/zvideo/123",
+                "微博：https://weibo。com/123",
+                "B站：https://www.bilibili.com/video/BV1RgzpBHEQL/",
+            ],
+        }],
+    )
+    monkeypatch.setattr(
+        "workflows.nodes.node_00_input.ExcelService.read_sheet_as_dicts",
+        lambda *_args, **_kwargs: [{"媒体名称": "Oxygen"}],
+    )
+    context = WorkflowContext(
+        run_id="test-invalid-url",
+        input_file=str(input_file),
+        table_dir=str(tmp_path),
+    )
+
+    output = Node00Input().process(context)
+
+    invalid = [issue for issue in output.issues if issue.code == "INVALID_URL"]
+    assert len(invalid) == 2
+    assert any("ww.zhihu.com" in issue.message for issue in invalid)
+    assert any("weibo" in issue.message for issue in invalid)
+    assert not any("bilibili.com" in issue.message for issue in invalid)
+    assert output.data["records"][0]["媒体"] == "Oxygen"
+
+
+def test_node_00_accepts_valid_share_text(monkeypatch, tmp_path):
+    """分享文案夹在 URL 后时，合法链接仍应通过。"""
+    input_file = tmp_path / "1-链接.xlsx"
+    input_file.touch()
+    for filename in ["3-媒体库.xlsx", "4-账户信息.xlsx", "5-费用.xlsx"]:
+        (tmp_path / filename).touch()
+
+    monkeypatch.setattr(
+        "workflows.nodes.node_00_input.ExcelService.read_link_sheet",
+        lambda *_args, **_kwargs: [{
+            "主题": "主题1",
+            "媒体": "Oxygen",
+            "row_number": 2,
+            "链接": [
+                'https://v.kuaishou.com/n8UrbDV9 少女专场 !"COS "鸣潮 "原神',
+                "知乎：https://www.zhihu.com/zvideo/1997648866380632485",
+            ],
+        }],
+    )
+    monkeypatch.setattr(
+        "workflows.nodes.node_00_input.ExcelService.read_sheet_as_dicts",
+        lambda *_args, **_kwargs: [{"媒体名称": "Oxygen"}],
+    )
+    context = WorkflowContext(
+        run_id="test-valid-url",
+        input_file=str(input_file),
+        table_dir=str(tmp_path),
+    )
+
+    output = Node00Input().process(context)
+
+    assert not any(issue.code == "INVALID_URL" for issue in output.issues)
+
+
 # ============================================================
 # 回归测试：针对真实表格结构修复的字段映射与转换逻辑
 # ============================================================

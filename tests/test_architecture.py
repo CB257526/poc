@@ -300,5 +300,43 @@ def test_node_01_url_extraction():
     assert len(urls2) == 2
 
 
+def test_url_spec_rejects_www_typo_and_fullwidth_dot():
+    from workflows.utils.url_spec import inspect_link_text, validate_url
+
+    assert not validate_url("https://www.zhihu.com/zvideo/123")
+    assert any("www" in reason for reason in validate_url("https://ww.zhihu.com/zvideo/123"))
+    assert any("全角" in reason for reason in validate_url("https://weibo。com/123"))
+    assert any("全角" in reason for reason in validate_url("https://www．zhihu.com/p/1"))
+
+    share = 'https://v.kuaishou.com/n8UrbDV9 少女专场 !"COS "鸣潮 "原神'
+    findings = inspect_link_text(share)
+    assert len(findings) == 1
+    assert findings[0].ok
+    assert findings[0].url == "https://v.kuaishou.com/n8UrbDV9"
+
+
+def test_node_01_skips_invalid_urls():
+    from workflows.models import WorkflowContext
+    from workflows.nodes.node_01_fill_basic import Node01FillBasic
+
+    context = WorkflowContext(
+        run_id="test-node01-url",
+        input_file="test.xlsx",
+        records=[{
+            "id": "rec_0001",
+            "媒体": "Oxygen",
+            "链接": [
+                "知乎：https://ww.zhihu.com/zvideo/123",
+                "微博：https://weibo.com/123",
+            ],
+        }],
+    )
+    output = Node01FillBasic().process(context)
+    assert any(issue.code == "INVALID_URL" for issue in output.issues)
+    records = output.data["records"]
+    assert len(records) == 1
+    assert records[0]["primary_link"] == "https://weibo.com/123"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

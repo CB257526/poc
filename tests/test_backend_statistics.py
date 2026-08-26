@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from workflows.backend.task_support import quote_summary_from_context, workflow_issues
+from workflows.backend.task_support import preview_validate, quote_summary_from_context, workflow_issues
 from workflows.models import WorkflowContext
 
 
@@ -71,3 +71,27 @@ def test_workflow_issues_include_node_id():
             "severity": "error",
         }
     ]
+
+
+def test_preview_validate_flags_invalid_urls(monkeypatch, tmp_path):
+    input_file = tmp_path / "1-链接.xlsx"
+    input_file.write_bytes(b"placeholder")
+    monkeypatch.setattr(
+        "workflows.backend.task_support.load_media_library",
+        lambda: ({"oxygen": "Oxygen"}, ["Oxygen"]),
+    )
+    monkeypatch.setattr(
+        "workflows.backend.task_support.ExcelService.read_link_sheet",
+        lambda *_args, **_kwargs: [{
+            "主题": "主题1",
+            "媒体": "Oxygen",
+            "row_number": 2,
+            "链接": ["https://ww.zhihu.com/zvideo/123"],
+        }],
+    )
+
+    preview = preview_validate(str(input_file))
+
+    assert preview["status"] == "needs_correction"
+    assert preview["records"][0]["match_status"] == "matched"
+    assert any(issue["code"] == "INVALID_URL" for issue in preview["issues"])

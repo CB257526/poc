@@ -1,13 +1,12 @@
 """节点1: 填写约稿资料基础信息 - 新版本"""
 
-import re
-import uuid
 from typing import Dict, Any, List, Tuple
 from urllib.parse import urlparse
 
 from workflows.nodes.base import BaseNode
 from workflows.models import WorkflowContext, NodeOutput, Issue
 from workflows.services import get_logger
+from workflows.utils.url_spec import extract_url_candidates, format_invalid_url_message, inspect_link_text
 
 logger = get_logger()
 
@@ -88,10 +87,9 @@ class Node01FillBasic(BaseNode):
                 links = [links]
 
             for link_text in links:
-                # 提取URL（一条链接文本可能包含多个URL）
-                urls = self._extract_urls_from_text(str(link_text))
+                findings = inspect_link_text(str(link_text))
 
-                if not urls:
+                if not findings:
                     issues.append(Issue(
                         level="warning",
                         code="NO_URL_FOUND",
@@ -101,12 +99,33 @@ class Node01FillBasic(BaseNode):
                     ))
                     continue
 
-                # 为每个URL创建一条记录
-                for raw_text, extracted_url in urls:
+                for finding in findings:
+                    if not finding.ok:
+                        already_reported = any(
+                            issue.code == "INVALID_URL"
+                            and issue.record_id == record.get("id")
+                            and issue.details.get("url") == finding.url
+                            for issue in context.issues
+                        )
+                        if not already_reported:
+                            issues.append(Issue(
+                                level="error",
+                                code="INVALID_URL",
+                                message=format_invalid_url_message(finding),
+                                node_id=self.node_id,
+                                record_id=record.get("id"),
+                                details={
+                                    "url": finding.url,
+                                    "raw_text": finding.text,
+                                    "reasons": finding.reasons,
+                                },
+                            ))
+                        continue
+
                     parsed_record = {
                         **record,  # 继承原始数据
-                        "raw_link_text": raw_text,
-                        "url": extracted_url,
+                        "raw_link_text": finding.text,
+                        "url": finding.url,
                         "platform": None,  # 下一步填充
                     }
                     parsed_records.append(parsed_record)
@@ -157,7 +176,6 @@ class Node01FillBasic(BaseNode):
         Returns:
             [(原始文本行, 提取的URL), ...]
         """
-        url_pattern = r'https?://[^\s一-龥]+'
         results = []
 
         # 按行分割（处理多个链接的情况）
@@ -168,15 +186,9 @@ class Node01FillBasic(BaseNode):
             if not line:
                 continue
 
-            # 查找URL
-            urls = re.findall(url_pattern, line)
-
+            urls = extract_url_candidates(line)
             if urls:
-                # 取第一个URL
-                url = urls[0]
-                # 清理URL（移除末尾的标点符号）
-                url = url.rstrip('.,;!?。，；！？')
-                results.append((line, url))
+                results.append((line, urls[0]))
 
         return results
 

@@ -123,6 +123,16 @@ def preview_validate(input_path: str, corrections: dict[str, str] | None = None)
                     "severity": "error",
                 }
             )
+        for finding_issue in node._validate_record_links(record_id, {**row, "媒体": canonical}):
+            issues.append(
+                {
+                    "record_id": finding_issue.record_id,
+                    "node_id": finding_issue.node_id,
+                    "code": finding_issue.code,
+                    "message": finding_issue.message,
+                    "severity": finding_issue.level,
+                }
+            )
 
     status = "ready" if not issues else "needs_correction"
     return {

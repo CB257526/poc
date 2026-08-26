@@ -17,6 +17,16 @@ function sortIssues(issues: TaskIssue[]) {
   return [...issues].sort((a, b) => (rank[a.severity] ?? 9) - (rank[b.severity] ?? 9));
 }
 
+function describeValidateBlockers(payload: ValidateTaskResponse) {
+  const unmatched = payload.records.filter((row) => row.match_status === "unmatched").length;
+  const invalidUrls = payload.issues.filter((issue) => issue.code === "INVALID_URL").length;
+  const parts: string[] = [];
+  if (unmatched) parts.push(`${unmatched} 个媒体名称无法匹配媒体库`);
+  if (invalidUrls) parts.push(`${invalidUrls} 条链接不符合规范（如 ww、全角小数点）`);
+  if (!parts.length) parts.push("存在输入错误");
+  return parts.join("，") + "。";
+}
+
 export function ProcessingPage() {
   const fileRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
@@ -55,6 +65,10 @@ export function ProcessingPage() {
     () => (validate?.records ?? []).filter((row) => row.match_status === "unmatched"),
     [validate],
   );
+  const invalidUrlIssues = useMemo(
+    () => (validate?.issues ?? []).filter((issue) => issue.code === "INVALID_URL"),
+    [validate],
+  );
 
   const displayIssues = useMemo(() => {
     const source = (task?.issues?.length ? task.issues : validate?.issues) ?? [];
@@ -79,7 +93,7 @@ export function ProcessingPage() {
         setTask(await api.getTask(payload.task_id));
         setMessage("输入预检通过，节点 1—6 已开始执行。");
       } else {
-        setMessage(`输入预检暂停：发现 ${payload.records.filter((r) => r.match_status === "unmatched").length} 个媒体名称无法匹配媒体库。`);
+        setMessage(`输入预检暂停：${describeValidateBlockers(payload)}`);
       }
     } catch (err) {
       setError(errorMessage(err, "处理失败"));
@@ -100,7 +114,7 @@ export function ProcessingPage() {
         setTask(await api.getTask(payload.task_id));
         setMessage("媒体名称重新校验通过，节点 1—6 已继续执行。");
       } else {
-        setError(`仍有 ${payload.records.filter((r) => r.match_status === "unmatched").length} 个媒体名称未匹配，请继续修改。`);
+        setError(`仍未通过预检：${describeValidateBlockers(payload)}`);
       }
     } catch (err) {
       setError(errorMessage(err, "重新校验失败"));
@@ -163,6 +177,14 @@ export function ProcessingPage() {
       </button>
       {message ? <div className="alert info">{message}</div> : null}
       {error ? <div className="alert error">{error}</div> : null}
+
+      {validate && invalidUrlIssues.length > 0 && unmatched.length === 0 && task?.status !== "running" && task?.status !== "completed" ? (
+        <div className="panel">
+          <h2>链接格式错误</h2>
+          <p>表1 中的原始链接需符合 URL 规范（半角小数点、完整 www 等）。系统不会自动改写，请修正 Excel 后重新上传。</p>
+          <button className="btn ghost" onClick={reset}>取消本次处理并重新上传</button>
+        </div>
+      ) : null}
 
       {validate && unmatched.length > 0 && task?.status !== "running" && task?.status !== "completed" ? (
         <div className="panel">
