@@ -169,18 +169,24 @@ def quote_summary_from_context(context) -> dict | None:
     details = []
     text_fee = 0.0
     video_fee = 0.0
+    unclassified_fee = 0.0
+    total_fee = 0.0
     media_names: set[str] = set()
     for row in details_raw:
         if row.get("eligible_for_monthly_summary") is not True:
             continue
         content_type = str(row.get("文章类型") or "")
         amount = _fee(row.get("费用") or row.get("基础金额"))
+        total_fee += amount
         media = str(row.get("媒体") or "")
         media_names.add(media)
         if is_text_type(content_type):
             text_fee += amount
         elif is_video_type(content_type):
             video_fee += amount
+        else:
+            # 网页抓取失败或类型暂未识别时，费用仍需入账，只暂缓分类。
+            unclassified_fee += amount
         details.append(
             {
                 "media_name": media,
@@ -204,14 +210,16 @@ def quote_summary_from_context(context) -> dict | None:
             "total_fee": 0,
             "text_fee": 0,
             "video_fee": 0,
+            "unclassified_fee": 0,
             "details": [],
         }
     return {
         "media_count": len(media_names),
         "quote_count": len(details),
-        "total_fee": round(text_fee + video_fee, 2),
+        "total_fee": round(total_fee, 2),
         "text_fee": round(text_fee, 2),
         "video_fee": round(video_fee, 2),
+        "unclassified_fee": round(unclassified_fee, 2),
         "details": details,
     }
 

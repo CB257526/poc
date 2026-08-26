@@ -33,22 +33,17 @@ def monthly(
     total_fee = 0.0
 
     for task in tasks:
+        # “当月汇总”按系统处理批次归月，而不是按作品发布日期归月。
+        # 作品可能发布于更早月份，但只要本月上传并完成处理，就应计入本月记录。
+        if parse_month(task.updated_at) != target:
+            continue
         summary = loads(task.quote_summary_json, None) or {}
         details = summary.get("details") or []
-        month_details = []
-        for row in details:
-            row_month = parse_month(row.get("publish_date")) or parse_month(task.updated_at)
-            if row_month == target:
-                month_details.append(row)
-        if not month_details and not details:
-            # 没有明细时，用任务完成时间归入当月
-            if parse_month(task.updated_at) != target:
-                continue
-        elif not month_details:
-            continue
+        month_details = details
 
         text_fee = 0.0
         video_fee = 0.0
+        unclassified_fee = 0.0
         batch_fee = 0.0
         for row in month_details:
             amount = float(row.get("amount") or 0)
@@ -58,13 +53,15 @@ def monthly(
                 text_fee += amount
             elif is_video_type(str(row.get("content_type") or "")):
                 video_fee += amount
-        if not month_details:
+            else:
+                unclassified_fee += amount
+        if not details:
             batch_fee = float(summary.get("total_fee") or 0)
             text_fee = float(summary.get("text_fee") or 0)
             video_fee = float(summary.get("video_fee") or 0)
-            month_details = details
+            unclassified_fee = float(summary.get("unclassified_fee") or 0)
 
-        count = len(month_details)
+        count = len(details) if details else int(summary.get("quote_count") or 0)
         quote_count += count
         total_fee += batch_fee
         batches.append(
@@ -75,6 +72,7 @@ def monthly(
                 "total_fee": round(batch_fee, 2),
                 "text_fee": round(text_fee, 2),
                 "video_fee": round(video_fee, 2),
+                "unclassified_fee": round(unclassified_fee, 2),
             }
         )
 

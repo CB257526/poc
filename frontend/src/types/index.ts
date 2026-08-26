@@ -95,6 +95,7 @@ export interface QuoteSummary {
   total_fee: number;
   text_fee: number;
   video_fee: number;
+  unclassified_fee: number;
   details: QuoteDetail[];
 }
 
@@ -125,6 +126,7 @@ export interface MonthlyBatch {
   total_fee: number;
   text_fee: number;
   video_fee: number;
+  unclassified_fee: number;
 }
 
 export interface MonthlyAnalytics {
@@ -233,7 +235,6 @@ export const PAGE_ROLES: Record<string, Role[]> = {
   "/processing": ["admin", "operator"],
   "/quotes": ["admin", "operator", "finance", "viewer"],
   "/analytics": ["admin", "operator", "finance", "viewer"],
-  "/exceptions": ["admin", "operator"],
   "/exports": ["admin", "operator", "finance"],
   "/config": ["admin"],
   "/users": ["admin"],

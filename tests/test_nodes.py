@@ -535,6 +535,29 @@ def test_node_05_excludes_unprocessable_records_from_quote_and_monthly_data(monk
     assert base_context.quote_details["excluded_count"] == 1
 
 
+def test_node_02_browser_failure_does_not_stop_financial_workflow(monkeypatch, base_context):
+    """网页抓取工具不可用时只告警，不应终止后续费用流程。"""
+    async def unavailable(_records):
+        raise RuntimeError("browser unavailable")
+
+    monkeypatch.setattr(
+        "workflows.nodes.node_02_fill_publication.scrape_publications",
+        unavailable,
+    )
+    base_context.records[0].update({
+        "primary_platform": "微博",
+        "primary_link": "https://weibo.com/example",
+    })
+
+    output = Node02FillPublication().process(base_context)
+
+    assert output.success is True
+    assert output.issues[0].level == "warning"
+    assert output.issues[0].code == "SCRAPING_UNAVAILABLE"
+    assert base_context.records[0]["文章类型"] is None
+    assert base_context.records[0]["平台"] == "微博"
+
+
 def test_node_06_monthly_summary_ignores_ineligible_details():
     node = Node06GeneratePayment()
     details = [

@@ -95,15 +95,26 @@ class Node02FillPublication(BaseNode):
 
         except Exception as e:
             logger.error("scraping_failed", error=str(e), exc_info=True)
+            # 网页抓取只用于补充标题、发布日期和文章类型。浏览器不可用或站点
+            # 限制抓取时，不应阻断媒体匹配、账户补全、费用计算和付款生成。
+            for record in records:
+                record.setdefault("标题", None)
+                record.setdefault("发布日期", None)
+                record.setdefault("文章类型", None)
+                record.setdefault("截图", None)
+                record["平台"] = record.get("primary_platform")
             issue = Issue(
-                level="critical",
-                code="SCRAPING_FAILED",
-                message=f"网络爬取失败: {str(e)}",
+                level="warning",
+                code="SCRAPING_UNAVAILABLE",
+                message="网页信息暂未获取，已继续进行媒体、账户及费用处理",
                 node_id=self.node_id
             )
             issues.append(issue)
             metrics.error_count = len(records)
-            return NodeOutput.create_failure(metrics=metrics, issues=issues)
+            logger.warning(
+                "scraping_skipped_without_blocking_workflow",
+                count=len(records),
+            )
 
         # 计算耗时
         duration = (datetime.now() - start_time).total_seconds() * 1000

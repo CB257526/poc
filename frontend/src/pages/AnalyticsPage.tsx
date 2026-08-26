@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Bar,
   BarChart,
@@ -23,18 +23,49 @@ function isVideoType(type: string) {
   return ["视频", "视频类"].includes(type);
 }
 
+function localMonthKey() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function monthKeyOf(value: string | null | undefined) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value.slice(0, 7);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+}
+
 export function AnalyticsPage() {
   const [analytics, setAnalytics] = useState<MonthlyAnalytics | null>(null);
   const [details, setDetails] = useState<QuoteDetail[]>([]);
   const [error, setError] = useState("");
+  const displayedMonth = useRef(localMonthKey());
 
   useEffect(() => {
-    Promise.all([api.monthly(), api.quotes()])
-      .then(([month, quotes]) => {
-        setAnalytics(month);
-        setDetails(quotes.details);
-      })
-      .catch((err: unknown) => setError(err instanceof ApiError ? err.message : "加载失败"));
+    let active = true;
+    const load = () => {
+      setError("");
+      Promise.all([api.monthly(), api.quotes()])
+        .then(([month, quotes]) => {
+          if (!active) return;
+          setAnalytics(month);
+          setDetails(monthKeyOf(quotes.task?.updated_at) === month.month ? quotes.details : []);
+          displayedMonth.current = localMonthKey();
+        })
+        .catch((err: unknown) => {
+          if (active) setError(err instanceof ApiError ? err.message : "加载失败");
+        });
+    };
+
+    load();
+    // 页面跨过每月 1 日零点后自动切换到新月份；历史数据仍保存在后端。
+    const timer = window.setInterval(() => {
+      if (localMonthKey() !== displayedMonth.current) load();
+    }, 60_000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
   }, []);
 
   if (error) return <div className="alert error">{error}</div>;
@@ -43,6 +74,9 @@ export function AnalyticsPage() {
   const currentTotal = details.reduce((sum, row) => sum + row.amount, 0);
   const textTotal = details.filter((row) => isTextType(row.content_type)).reduce((sum, row) => sum + row.amount, 0);
   const videoTotal = details.filter((row) => isVideoType(row.content_type)).reduce((sum, row) => sum + row.amount, 0);
+  const unclassifiedTotal = details
+    .filter((row) => !isTextType(row.content_type) && !isVideoType(row.content_type))
+    .reduce((sum, row) => sum + row.amount, 0);
   const top = analytics.top_media.map((item) => ({ name: item.media, amount: item.total_fee }));
   const lineData = analytics.batches.map((batch, index) => ({
     date: formatDate(batch.processed_at),
@@ -51,6 +85,7 @@ export function AnalyticsPage() {
     total_fee: batch.total_fee,
     text_fee: batch.text_fee,
     video_fee: batch.video_fee,
+    unclassified_fee: batch.unclassified_fee,
   }));
 
   return (
@@ -66,6 +101,11 @@ export function AnalyticsPage() {
           <Metric label="本次总费用" value={yuan(currentTotal)} />
           <Metric label="本次图文费用" value={yuan(textTotal)} hint={currentTotal ? `${((textTotal / currentTotal) * 100).toFixed(1)}%` : "0%"} />
           <Metric label="本次视频费用" value={yuan(videoTotal)} hint={currentTotal ? `${((videoTotal / currentTotal) * 100).toFixed(1)}%` : "0%"} />
+          <Metric
+            label="本次待分类费用"
+            value={yuan(unclassifiedTotal)}
+            hint={currentTotal ? `${((unclassifiedTotal / currentTotal) * 100).toFixed(1)}%` : "0%"}
+          />
         </div>
       </div>
       <div className="panel">
@@ -124,6 +164,7 @@ export function AnalyticsPage() {
                     <th>约稿数量</th>
                     <th>图文费用</th>
                     <th>视频费用</th>
+                    <th>待分类费用</th>
                     <th>费用总额</th>
                   </tr>
                 </thead>
@@ -135,6 +176,7 @@ export function AnalyticsPage() {
                       <td>{row.quote_count}</td>
                       <td>{yuan(row.text_fee)}</td>
                       <td>{yuan(row.video_fee)}</td>
+                      <td>{yuan(row.unclassified_fee)}</td>
                       <td>{yuan(row.total_fee)}</td>
                     </tr>
                   ))}

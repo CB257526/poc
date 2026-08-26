@@ -150,7 +150,7 @@ export function ProcessingPage() {
       {validate && unmatched.length > 0 && task?.status !== "running" && task?.status !== "completed" ? (
         <div className="panel">
           <h2>媒体名称修正</h2>
-          <p>系统尚未执行链接抓取和费用计算。主题、原表行号和链接信息仅用于定位，不能修改。</p>
+          <p>系统尚未执行链接抓取和费用计算。请手动填写媒体库中的标准媒体名，提交后由后端重新校验。</p>
           <div className="table-wrap">
             <table className="data">
               <thead>
@@ -173,15 +173,13 @@ export function ProcessingPage() {
                       <td>{row.row_number}</td>
                       <td>{row.topic}</td>
                       <td>
-                        <select
+                        <input
+                          type="text"
                           value={current}
                           onChange={(e) => setNames((prev) => ({ ...prev, [String(row.row_number)]: e.target.value }))}
-                        >
-                          {!matched ? <option value={row.media_name}>{row.media_name}（当前值）</option> : null}
-                          {validate.allowed_media_names.map((name) => (
-                            <option key={name} value={name}>{name}</option>
-                          ))}
-                        </select>
+                          placeholder="请输入媒体库中的标准媒体名"
+                          aria-label={`第 ${row.row_number} 行媒体名称`}
+                        />
                       </td>
                       <td>{row.link_count}</td>
                       <td>{row.link_preview}</td>

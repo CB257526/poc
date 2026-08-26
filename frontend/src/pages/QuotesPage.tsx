@@ -150,7 +150,6 @@ export function QuotesPage() {
                     <th>媒体等级</th>
                     <th>粉丝量</th>
                     <th>约稿数量</th>
-                    <th>单价</th>
                     <th>金额</th>
                     <th>状态</th>
                     <th>标题</th>
@@ -166,7 +165,6 @@ export function QuotesPage() {
                       <td>{row.media_level}</td>
                       <td>{row.followers}</td>
                       <td>{row.quote_count}</td>
-                      <td>{yuan(row.unit_price)}</td>
                       <td>{yuan(row.amount)}</td>
                       <td>{row.status}</td>
                       <td>{row.title}</td>

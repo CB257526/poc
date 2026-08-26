@@ -44,7 +44,6 @@ npm run dev
 | `/processing` | 数据处理 | ✓ | ✓ | | |
 | `/quotes` | 约稿资料 | ✓ | ✓ | ✓ | ✓ |
 | `/analytics` | 费用分析 | ✓ | ✓ | ✓ | ✓ |
-| `/exceptions` | 异常提醒 | ✓ | ✓ | | |
 | `/exports` | 文件输出 | ✓ | ✓ | ✓ | |
 | `/config` | 基础配置 | ✓ | | | |
 | `/users` | 用户管理 | ✓ | | | |

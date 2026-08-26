@@ -3,7 +3,6 @@ import { GuestOnly, RequireAuth } from "./auth/guards";
 import { AppLayout } from "./layout/AppLayout";
 import { AnalyticsPage } from "./pages/AnalyticsPage";
 import { ConfigPage } from "./pages/ConfigPage";
-import { ExceptionsPage } from "./pages/ExceptionsPage";
 import { ExportsPage } from "./pages/ExportsPage";
 import { LoginPage } from "./pages/LoginPage";
 import { OverviewPage } from "./pages/OverviewPage";
@@ -25,7 +24,6 @@ export default function App() {
           <Route path="/processing" element={<ProcessingPage />} />
           <Route path="/quotes" element={<QuotesPage />} />
           <Route path="/analytics" element={<AnalyticsPage />} />
-          <Route path="/exceptions" element={<ExceptionsPage />} />
           <Route path="/exports" element={<ExportsPage />} />
           <Route path="/config" element={<ConfigPage />} />
           <Route path="/users" element={<UsersPage />} />

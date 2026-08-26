@@ -7,7 +7,6 @@ const NAV = [
   { to: "/processing", label: "数据处理" },
   { to: "/quotes", label: "约稿资料" },
   { to: "/analytics", label: "费用分析" },
-  { to: "/exceptions", label: "异常提醒" },
   { to: "/exports", label: "文件输出" },
   { to: "/config", label: "基础配置" },
   { to: "/users", label: "用户管理" },
