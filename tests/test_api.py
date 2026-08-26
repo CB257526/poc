@@ -18,7 +18,7 @@ def configure_api(tmp_path, monkeypatch):
 
 def test_validate_real_link_table_is_ready(tmp_path, monkeypatch):
     client = configure_api(tmp_path, monkeypatch)
-    content = Path("table/1-链接.xlsx").read_bytes()
+    content = Path("table_test/1-链接.xlsx").read_bytes()
 
     response = client.post("/api/v1/tasks/validate", content=content)
 
@@ -30,7 +30,7 @@ def test_validate_real_link_table_is_ready(tmp_path, monkeypatch):
 
 def test_media_name_correction_changes_task_to_ready(tmp_path, monkeypatch):
     client = configure_api(tmp_path, monkeypatch)
-    workbook = load_workbook("table/1-链接.xlsx")
+    workbook = load_workbook("table_test/1-链接.xlsx")
     workbook["Sheet1"]["A2"] = "Alex Cu1"
     output = BytesIO()
     workbook.save(output)
