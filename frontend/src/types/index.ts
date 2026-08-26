@@ -146,7 +146,6 @@ export interface DashboardOverview {
   quote_count: number;
   total_fee: number;
   type_distribution: { content_type: string; quote_count: number }[];
-  pending_exceptions: number;
   config_ready: boolean;
 }
 

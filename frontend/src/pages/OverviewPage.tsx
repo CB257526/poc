@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { api } from "../api";
 import { ApiError, yuan } from "../api/client";
-import { Hero, Metric, StatusPill } from "../components/ui";
+import { Hero, Metric } from "../components/ui";
 import { NODE_LABELS, TASK_STATUS_LABEL, type DashboardOverview } from "../types";
 
 export function OverviewPage() {
@@ -67,13 +67,6 @@ export function OverviewPage() {
         </div>
         <div className="panel">
           <b>本次处理结果</b>
-          <p>
-            {data.pending_exceptions > 0 ? (
-              <StatusPill kind="warn">{data.pending_exceptions} 项待确认</StatusPill>
-            ) : (
-              <StatusPill kind="done">无待处理异常</StatusPill>
-            )}
-          </p>
           <p>
             {completed
               ? "当前指标来自最近一次已完成任务，异常记录未计入费用与月度统计。"

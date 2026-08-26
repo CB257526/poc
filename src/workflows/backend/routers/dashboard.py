@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from ..auth import get_current_user
 from ..config_store import config_status_payload
 from ..database import get_db
-from ..models import FeeException, Task, User
+from ..models import Task, User
 from ..task_support import STATUS_LABELS, loads, task_payload
 
 router = APIRouter(prefix="/api/v1/dashboard", tags=["dashboard"])
@@ -20,11 +20,6 @@ def overview(
     _user: User = Depends(get_current_user),
 ):
     latest = db.query(Task).order_by(Task.created_at.desc()).first()
-    pending = (
-        db.query(FeeException)
-        .filter(FeeException.status != "已解决")
-        .count()
-    )
     config = config_status_payload(db)
     if latest is None:
         return {
@@ -34,7 +29,6 @@ def overview(
             "quote_count": 0,
             "total_fee": 0,
             "type_distribution": [],
-            "pending_exceptions": pending,
             "config_ready": config["all_ready"],
         }
 
@@ -52,6 +46,5 @@ def overview(
             for name, count in type_counts.items()
             if count
         ],
-        "pending_exceptions": pending,
         "config_ready": config["all_ready"],
     }
