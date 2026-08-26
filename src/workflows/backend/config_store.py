@@ -11,11 +11,8 @@ from workflows.paths import default_table_dir
 
 from .models import ConfigFile, User
 
+# 工作流只读 3/4/5。表 2、表 6 由 node_06 按固定模板生成，不要求管理员上传。
 CONFIG_KINDS: dict[str, dict[str, str]] = {
-    "quote_template": {
-        "filename": "2-约稿资料_空白模板.xlsx",
-        "label": "约稿资料模板",
-    },
     "media_library": {
         "filename": "3-媒体库.xlsx",
         "label": "媒体库",
@@ -28,16 +25,6 @@ CONFIG_KINDS: dict[str, dict[str, str]] = {
         "filename": "5-费用.xlsx",
         "label": "费用规则",
     },
-    "payment_template": {
-        "filename": "6-付款模板.xlsx",
-        "label": "付款模板",
-    },
-}
-
-# 仓库 table/ 里实际文件名可能没有「空白模板 / 付款模板」后缀
-FALLBACK_FILENAMES: dict[str, list[str]] = {
-    "quote_template": ["2-约稿资料_空白模板.xlsx", "2-约稿资料.xlsx"],
-    "payment_template": ["6-付款模板.xlsx", "6-付款.xlsx"],
 }
 
 
@@ -48,12 +35,11 @@ def table_dir() -> Path:
 
 
 def existing_table_file(kind: str) -> Path | None:
-    names = FALLBACK_FILENAMES.get(kind, [CONFIG_KINDS[kind]["filename"]])
-    for name in names:
-        path = table_dir() / name
-        if path.is_file():
-            return path
-    return None
+    meta = CONFIG_KINDS.get(kind)
+    if meta is None:
+        return None
+    path = table_dir() / meta["filename"]
+    return path if path.is_file() else None
 
 
 def ensure_config_rows(db: Session) -> None:

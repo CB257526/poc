@@ -15,7 +15,7 @@ workflow/                          # 仓库根 = cwd
 ├── pyproject.toml
 ├── uv.lock
 ├── src/workflows/backend/         # FastAPI
-├── table/                         # 参考表 2–6（工作流读取）
+├── table/                         # 参考表 3/4/5（工作流读取）
 │   ├── 3-媒体库.xlsx              # 必填
 │   ├── 4-账户信息.xlsx            # 必填
 │   └── 5-费用.xlsx                # 必填
@@ -24,7 +24,7 @@ workflow/                          # 仓库根 = cwd
 └── output/{run_id}/               # 自动创建：约稿资料、付款表
 ```
 
-Node00 启动时检查 `table/` 里 3/4/5 是否存在。缺文件工作流会 critical 失败。2、6 是模板/样例，管理员可通过配置接口覆盖。
+Node00 启动时检查 `table/` 里 3/4/5 是否存在。缺文件工作流会 critical 失败。表 2、表 6 由 node_06 按固定模板写出到 `output/{run_id}/`，配置接口不要求这两张。
 
 ---
 
@@ -143,9 +143,9 @@ curl -s http://127.0.0.1:8000/api/v1/config/files \
   -F file=@./table_test/3-媒体库.xlsx
 ```
 
-`kind`：`quote_template` | `media_library` | `accounts` | `fee_rules` | `payment_template`。上传会覆盖 `table/` 里对应规范文件名。
+`kind`：`media_library` | `accounts` | `fee_rules`。上传会覆盖 `table/` 里对应规范文件名（3-媒体库 / 4-账户信息 / 5-费用）。不需要、也不接受表 2 / 表 6 模板。
 
-`GET /api/v1/config` 看五项是否 `configured`。`all_ready=true` 后处理页才亮绿灯。
+`GET /api/v1/config` 看这三项是否 `configured`。`all_ready=true` 后处理页才亮绿灯。
 
 ---
 

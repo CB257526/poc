@@ -5,11 +5,9 @@ import { Hero, StatusPill } from "../components/ui";
 import type { ConfigKind, ConfigStatus } from "../types";
 
 const KINDS: { kind: ConfigKind; filename: string }[] = [
-  { kind: "quote_template", filename: "2-约稿资料_空白模板.xlsx" },
   { kind: "media_library", filename: "3-媒体库.xlsx" },
   { kind: "accounts", filename: "4-账户信息.xlsx" },
   { kind: "fee_rules", filename: "5-费用.xlsx" },
-  { kind: "payment_template", filename: "6-付款模板.xlsx" },
 ];
 
 export function ConfigPage() {
@@ -41,12 +39,12 @@ export function ConfigPage() {
 
   return (
     <>
-      <Hero title="基础配置" subtitle="管理员维护模板、媒体库、账户、费用规则和付款模板。业务人员日常处理不需要上传这些文件。" />
+      <Hero title="基础配置" subtitle="管理员维护媒体库、账户信息和费用规则。约稿资料与付款表由工作流按固定模板生成，不必上传。" />
       {error ? <div className="alert error">{error}</div> : null}
       {message ? <div className="alert success">{message}</div> : null}
       <div className="panel">
         <h2>配置文件</h2>
-        <p style={{ color: "var(--muted)" }}>2-约稿资料仅保留两个 Sheet 的空白表头。以下文件由管理员在后台维护。</p>
+        <p style={{ color: "var(--muted)" }}>只需配置表 3 / 4 / 5。业务人员日常只上传链接表。</p>
         {(status?.files ?? []).map((item) => {
           const hint = KINDS.find((k) => k.kind === item.kind);
           return (

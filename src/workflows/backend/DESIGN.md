@@ -52,12 +52,12 @@ run_workflow(
 
 由 `workflows.paths` 统一：
 
-| 用途 | 默认 | 环境变量 |
-| --- | --- | --- |
-| 后端 SQLite、上传的表1 | `runtime/` | `WORKFLOW_RUNTIME_DIR` |
-| 工作流运行库 | `runtime/workflow.db` | 同上 |
-| 参考表 2–6 | `table/` | `WORKFLOW_TABLE_DIR` |
-| 一次运行产物 | `output/{run_id}/` | `WORKFLOW_OUTPUT_DIR` |
+| 用途                   | 默认                    | 环境变量                 |
+| ---------------------- | ----------------------- | ------------------------ |
+| 后端 SQLite、上传的表1 | `runtime/`            | `WORKFLOW_RUNTIME_DIR` |
+| 工作流运行库           | `runtime/workflow.db` | 同上                     |
+| 参考表 3/4/5           | `table/`              | `WORKFLOW_TABLE_DIR`   |
+| 一次运行产物           | `output/{run_id}/`    | `WORKFLOW_OUTPUT_DIR`  |
 
 一次任务对应的文件：
 
@@ -79,12 +79,12 @@ run_workflow(
 
 种子：
 
-| id | email | role | 密码 |
-| --- | --- | --- | --- |
-| u_admin | admin@byd.local | admin | Passw0rd! |
-| u_op | operator@byd.local | operator | 同上 |
-| u_fin | finance@byd.local | finance | 同上 |
-| u_view | viewer@byd.local | viewer | 同上 |
+| id      | email              | role     | 密码      |
+| ------- | ------------------ | -------- | --------- |
+| u_admin | admin@byd.local    | admin    | Passw0rd! |
+| u_op    | operator@byd.local | operator | 同上      |
+| u_fin   | finance@byd.local  | finance  | 同上      |
+| u_view  | viewer@byd.local   | viewer   | 同上      |
 
 ---
 
@@ -128,14 +128,15 @@ JWT：`sub` = 用户字符串 id，`type` = `access` | `refresh`。
 
 ### 5.3 配置 `/api/v1/config`
 
-五个 kind：`quote_template` / `media_library` / `accounts` / `fee_rules` / `payment_template`。
+三个 kind：`media_library` / `accounts` / `fee_rules`（对应 `table/` 里的 3/4/5）。表 2、表 6 由工作流固定生成，不进配置。
 
 磁盘文件名：
 
-- 媒体库 / 账户 / 费用：固定 `3-媒体库.xlsx` 等
-- 模板：优先 `2-约稿资料_空白模板.xlsx`、`6-付款模板.xlsx`；没有则回退 `2-约稿资料.xlsx`、`6-付款.xlsx`
+- `3-媒体库.xlsx`
+- `4-账户信息.xlsx`
+- `5-费用.xlsx`
 
-**GET `/config`**（已登录）：扫磁盘 + 库，返回 `{ all_ready, files[5] }`。缺文件则该项 `configured=false`。
+**GET `/config`**（已登录）：扫磁盘 + 库，返回 `{ all_ready, files[3] }`。缺文件则该项 `configured=false`。`all_ready` 只看这三项。
 
 **POST `/config/files`**（admin，multipart：`kind` + `file`）：
 
@@ -228,7 +229,7 @@ admin / operator / finance。viewer 403。任务未 `completed` → 409。
 
 已登录。数字只来自 **最近一条任务且已 completed** 的 `quote_summary`（可入账口径）。没有完成任务时 `latest_task=null`、计数 0，不造假数据。
 
-`pending_exceptions`：`exceptions.status != 已解决` 的条数。`config_ready` 来自配置五项是否齐。
+`pending_exceptions`：`exceptions.status != 已解决` 的条数。`config_ready` 来自配置三项（媒体库 / 账户 / 费用）是否齐。
 
 ### 5.10 月度 `GET /analytics/monthly?month=YYYY-MM`
 

@@ -267,15 +267,13 @@ GET /api/v1/dashboard/overview
 
 ## 5. 基础配置
 
-业务人员日常 **只上传链接表**。下列 5 个文件由管理员维护，对应原 POC 展开区。
+业务人员日常 **只上传链接表（表 1）**。管理员只需维护下面 3 个参考表。约稿资料（表 2）和付款表（表 6）由工作流 `node_06` 按固定模板生成，**不要上传、也不纳入配置检查**。
 
 | kind | 文件 | 用途 |
 | --- | --- | --- |
-| `quote_template` | 2-约稿资料_空白模板.xlsx | 仅两个 Sheet 空白表头 |
 | `media_library` | 3-媒体库.xlsx | 标准媒体名、等级、粉丝量 |
 | `accounts` | 4-账户信息.xlsx | 收款账户 |
 | `fee_rules` | 5-费用.xlsx | 等级 × 图文/视频单价 |
-| `payment_template` | 6-付款模板.xlsx | 云账户付款模板 |
 
 ### 5.1 查询状态
 
@@ -301,7 +299,7 @@ GET /api/v1/config
 }
 ```
 
-`files` 必须覆盖上述 5 个 kind，缺文件则 `configured=false`。
+`files` 必须覆盖上述 3 个 kind，缺文件则 `configured=false`。`all_ready` 仅当这三项都在 `table/` 中存在为 true。非法 `kind`（含已废弃的 `quote_template` / `payment_template`）上传返回 `400`。
 
 ### 5.2 上传 / 覆盖
 

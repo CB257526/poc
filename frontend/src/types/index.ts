@@ -157,12 +157,7 @@ export interface ConfigFileStatus {
   updated_by: string | null;
 }
 
-export type ConfigKind =
-  | "quote_template"
-  | "media_library"
-  | "accounts"
-  | "fee_rules"
-  | "payment_template";
+export type ConfigKind = "media_library" | "accounts" | "fee_rules";
 
 export interface ConfigStatus {
   files: ConfigFileStatus[];

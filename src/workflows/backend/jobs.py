@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from workflows.paths import default_table_dir
 
-from .database import SessionLocal
+from .database import SessionLocal, ensure_db
 from .models import FeeException, Task
 from .task_support import (
     dumps,
@@ -26,6 +26,7 @@ def _session() -> Session:
 
 
 def execute_workflow(task_id: str) -> None:
+    ensure_db()
     db = _session()
     try:
         task = db.query(Task).filter(Task.id == task_id).first()
