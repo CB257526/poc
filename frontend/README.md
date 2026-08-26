@@ -22,13 +22,7 @@ npm run dev
 
 浏览器打开 `http://127.0.0.1:5173`。
 
-默认 `VITE_USE_MOCK=false`，连接仓库内 FastAPI 后端；如只需静态演示，可临时改为 `true`。
-
-另开一个终端启动后端：
-
-```bash
-uv run workflow-api
-```
+默认 `VITE_USE_MOCK=true`，不依赖后端即可走完全部页面。
 
 对接真实后端时：
 
