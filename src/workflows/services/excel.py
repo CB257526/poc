@@ -32,7 +32,8 @@ class ExcelService:
         - A列非空且B列为空：主题行（如 "主题1"），后续链接归属于该主题
         - A列非空且B列非空：媒体（作者）块起点，A列通常为合并单元格、仅左上角有值
         - B列非空：该媒体名下的一条链接（一行一条）
-        - 全空行：主题间的分隔，跳过
+        - 全空行：仅跳过。同一媒体的链接之间经常会空一行，空行不能结束媒体块；
+          媒体块只在遇到下一个媒体名、主题行或表尾时结束
 
         Returns:
             [{"主题": str, "媒体": str, "row_number": int, "链接": [str, ...]}, ...]
@@ -68,12 +69,11 @@ class ExcelService:
                 link_val = ExcelService._clean_cell(row[1] if len(row) >= 2 else None)
 
                 if not link_val:
-                    # 主题行或空行：结束当前媒体块，更新主题
                     if topic_val:
+                        # 主题行：结束当前媒体块并切换主题
                         flush_media()
                         current_topic = topic_val
-                    else:
-                        flush_media()
+                    # 全空行：跳过，保留当前媒体，后续链接仍归该媒体
                     continue
 
                 # B列有链接：若本行A列非空，则是新媒体（作者）块起点

@@ -300,6 +300,39 @@ def test_node_01_url_extraction():
     assert len(urls2) == 2
 
 
+def test_read_link_sheet_keeps_links_after_blank_rows(tmp_path):
+    """同一媒体链接之间的空行不能结束媒体块。"""
+    from openpyxl import Workbook
+    from workflows.services.excel import ExcelService
+
+    path = tmp_path / "1-链接.xlsx"
+    wb = Workbook()
+    ws = wb.active
+    ws["A1"] = "主题1"
+    ws["A2"] = "皮球老爸"
+    ws["B2"] = "https://www.zhihu.com/p/1"
+    ws["B4"] = "https://weibo.com/1"
+    ws["B6"] = "https://mp.weixin.qq.com/s/abc"
+    ws["A8"] = "拾光者"
+    ws["B8"] = "知乎：https://www.zhihu.com/p/2"
+    ws["B9"] = "微博：https://weibo.com/2"
+    wb.save(path)
+    wb.close()
+
+    records = ExcelService.read_link_sheet(str(path))
+    by_media = {row["媒体"]: row for row in records}
+    assert by_media["皮球老爸"]["主题"] == "主题1"
+    assert by_media["皮球老爸"]["链接"] == [
+        "https://www.zhihu.com/p/1",
+        "https://weibo.com/1",
+        "https://mp.weixin.qq.com/s/abc",
+    ]
+    assert by_media["拾光者"]["链接"] == [
+        "知乎：https://www.zhihu.com/p/2",
+        "微博：https://weibo.com/2",
+    ]
+
+
 def test_url_spec_rejects_www_typo_and_fullwidth_dot():
     from workflows.utils.url_spec import inspect_link_text, validate_url
 
