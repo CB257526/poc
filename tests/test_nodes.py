@@ -490,6 +490,7 @@ def test_node_05_quote_details_include_sample_fields(monkeypatch, base_context):
         "身份证": "110101199001011234",
         "链接": ["知乎 https://zhihu.com/p/1", "微博 https://weibo.com/1"],
         "sync_links": [{"url": "https://weibo.com/1", "raw_text": "微博 https://weibo.com/1"}],
+        "截图": "/tmp/shot.png",
     })
     monkeypatch.setattr(
         "workflows.nodes.node_05_calculate_fee.ExcelService.read_sheet_as_dicts",
@@ -506,7 +507,7 @@ def test_node_05_quote_details_include_sample_fields(monkeypatch, base_context):
     assert detail["平台"] == "知乎"
     assert "知乎 https://zhihu.com/p/1" in detail["同步平台"]
     assert detail["发布形式"] is None
-    assert detail["截图"] is None
+    assert detail["截图"] == "/tmp/shot.png"
     assert detail["eligible_for_monthly_summary"] is True
     assert base_context.quote_details["excluded_count"] == 0
 
@@ -574,6 +575,10 @@ def test_node_06_payment_rows_preserve_first_seen_order():
 def test_node_06_write_quote_excel_matches_sample_layout(tmp_path):
     """约稿资料写出约稿 + 约稿费用合计，字段与合计行对齐样表。"""
     from openpyxl import load_workbook
+    from PIL import Image as PILImage
+
+    shot = tmp_path / "shot.png"
+    PILImage.new("RGB", (40, 30), color=(20, 80, 160)).save(shot)
 
     node = Node06GeneratePayment()
     details = [
@@ -584,7 +589,7 @@ def test_node_06_write_quote_excel_matches_sample_layout(tmp_path):
             "收款方": "崔诚靓", "身份证": "id1", "账号": "acc1", "联系方式": "tel1",
             "开户行": "行1", "开户行所在城市": "北京", "基础金额": 2000, "奖励金额": None,
             "同步平台": "知乎 https://zhihu.com/1\n微博 https://weibo.com/1",
-            "截图": "should-not-be-exported.png",
+            "截图": str(shot),
         },
         {
             "媒体": "Oxygen", "媒体等级": "FC", "粉丝量": "4.3w",
@@ -624,6 +629,7 @@ def test_node_06_write_quote_excel_matches_sample_layout(tmp_path):
     assert ws.cell(2, 18).value == 2000
     assert ws.cell(2, 20).value.startswith("知乎")
     assert ws.cell(2, 9).value is None
+    assert len(ws._images) == 1
     assert ws.cell(5, 17).value == "合计"
     assert ws.cell(5, 18).value == "=SUM(R2:R4)"
 
