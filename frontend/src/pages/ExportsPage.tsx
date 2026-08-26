@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
-import { ApiError, downloadBlob, formatDateTime, yuan } from "../api/client";
+import { downloadBlob, errorMessage, formatDateTime, yuan } from "../api/client";
 import { Hero, StatusPill } from "../components/ui";
 import type { Task } from "../types";
 import { TASK_STATUS_LABEL } from "../types";
@@ -19,7 +19,7 @@ export function ExportsPage() {
         const preferred = items.find((item) => item.status === "completed") ?? items[0];
         setTaskId(preferred?.task_id ?? "");
       })
-      .catch((err: unknown) => setError(err instanceof ApiError ? err.message : "加载失败"))
+      .catch((err: unknown) => setError(errorMessage(err, "加载失败")))
       .finally(() => setLoaded(true));
   }, []);
 
@@ -41,7 +41,7 @@ export function ExportsPage() {
       const blob = await api.downloadFile(task.task_id, fileKey);
       downloadBlob(blob, filename);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "下载失败");
+      setError(errorMessage(err, "下载失败"));
     } finally {
       setBusyKey("");
     }
@@ -54,7 +54,7 @@ export function ExportsPage() {
       const blob = await api.downloadAll(task.task_id);
       downloadBlob(blob, "约稿费用验收_处理结果.zip");
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "打包下载失败");
+      setError(errorMessage(err, "打包下载失败"));
     } finally {
       setBusyKey("");
     }

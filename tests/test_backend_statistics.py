@@ -1,6 +1,7 @@
 from types import SimpleNamespace
 
-from workflows.backend.task_support import quote_summary_from_context
+from workflows.backend.task_support import quote_summary_from_context, workflow_issues
+from workflows.models import WorkflowContext
 
 
 def test_unclassified_content_keeps_fee_in_total():
@@ -47,3 +48,26 @@ def test_total_fee_contains_all_content_categories():
     assert summary["video_fee"] == 2000
     assert summary["unclassified_fee"] == 3000
     assert summary["total_fee"] == summary["text_fee"] + summary["video_fee"] + summary["unclassified_fee"]
+
+
+def test_workflow_issues_include_node_id():
+    context = WorkflowContext(run_id="run-issues", input_file="input.xlsx")
+    context.add_issue(
+        level="error",
+        code="MEDIA_NOT_FOUND",
+        message="媒体库未找到该媒体",
+        node_id="node_03",
+        record_id="rec_0001",
+    )
+
+    items = workflow_issues(context)
+
+    assert items == [
+        {
+            "record_id": "rec_0001",
+            "node_id": "node_03",
+            "code": "MEDIA_NOT_FOUND",
+            "message": "媒体库未找到该媒体",
+            "severity": "error",
+        }
+    ]

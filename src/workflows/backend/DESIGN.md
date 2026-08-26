@@ -170,7 +170,7 @@ Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
    - 用 Node00 的 `_merge_duplicate_media` 按主题+媒体合并
    - 读 `table/3-媒体库.xlsx`，名称归一化（去空格/全角空格、小写）后比对
    - 每条记录带原 Excel `row_number`（修正接口的 key）
-   - 未命中：`match_status=unmatched`，`issues[].code=MEDIA_NOT_IN_LIBRARY`，并给 `suggested_name`
+   - 未命中：`match_status=unmatched`，`issues[].code=MEDIA_NOT_IN_LIBRARY`，`issues[].node_id=node_00`，并给 `suggested_name`
 5. **建 Task 行**：`status` 为 `ready`（全匹配）或 `needs_correction`。JSON 列写入 records / issues / allowed_media。进度先记 `completed_nodes=["node_00"]`。
 6. **返回 ValidateTaskResponse**：`task_id, status, allowed_media_names, records, issues`。
 
@@ -203,9 +203,10 @@ Body：`{ "media_name_corrections": { "<row_number>": "<媒体库标准名>" } }
 
 1. 读 Task：`input_file_path`、`corrections_json`、`run_id`
 2. 调 `run_workflow(...)`，`table_dir` 固定当前 `table/`
-3. `on_progress` 每完成一个节点写 `progress_json`（`completed_nodes`、`current_node`、`total_nodes=7`）
+3. `on_progress` 每完成一个节点写 `progress_json`（`completed_nodes`、`current_node`、`total_nodes=7`），同时把 `workflow_issues(context)` 写入 `issues_json`（含 `node_id`）
 4. 结束：
-   - 失败 / terminated / critical → `failed`，`error` 中文原因，不入月度
+   - 失败 / terminated / critical → `failed`，`error` 中文原因，不入月度；`issues_json` 仍保留
+   - 进程级异常 → `failed`，追加 `WORKFLOW_CRASH`
    - 成功 → `completed`；从 context 抽 **可入账** 明细（`eligible_for_monthly_summary is True`）写成英文 `quote_summary`；记下 quote/payment 绝对路径
 5. 对照「约稿」与「约稿费用合计」两个 sheet，不一致则插入 `exceptions`（待确认）
 
@@ -215,7 +216,7 @@ Body：`{ "media_name_corrections": { "<row_number>": "<媒体库标准名>" } }
 
 **GET `/tasks`**（已登录）→ `Task[]`，按 `created_at` 倒序。约稿资料页列出每一次处理，点选后看该次 `quote_summary.details`。没有任务返回 `[]`。
 
-**GET `/tasks/{id}`**（已登录）→ Task：status、progress、quote_summary、files、issues。运行中 `quote_summary` 可为 null。
+**GET `/tasks/{id}`**（已登录）→ Task：status、progress、quote_summary、files、issues。`issues[]` 含 `record_id, node_id, code, message, severity`。运行中 `quote_summary` 可为 null，但 `issues` 会随节点更新。
 
 **GET `/tasks/latest`** → 最近一条；没有则 JSON `null`（200）。文件输出页仍用这条。
 

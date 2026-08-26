@@ -11,7 +11,7 @@ import {
   YAxis,
 } from "recharts";
 import { api } from "../api";
-import { ApiError, formatDate, yuan } from "../api/client";
+import { errorMessage, formatDate, yuan } from "../api/client";
 import { Hero, Metric } from "../components/ui";
 import type { MonthlyAnalytics, QuoteDetail } from "../types";
 
@@ -53,7 +53,7 @@ export function AnalyticsPage() {
           displayedMonth.current = localMonthKey();
         })
         .catch((err: unknown) => {
-          if (active) setError(err instanceof ApiError ? err.message : "加载失败");
+          if (active) setError(errorMessage(err, "加载失败"));
         });
     };
 

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api";
-import { ApiError, yuan } from "../api/client";
+import { errorMessage, yuan } from "../api/client";
 import { Hero, Metric, StatusPill } from "../components/ui";
 import type { ExceptionItem } from "../types";
 
@@ -18,7 +18,7 @@ export function ExceptionsPage() {
   }
 
   useEffect(() => {
-    reload().catch((err: unknown) => setError(err instanceof ApiError ? err.message : "加载失败"));
+    reload().catch((err: unknown) => setError(errorMessage(err, "加载失败")));
   }, []);
 
   const selected = items.find((item) => item.exception_id === selectedId) ?? null;
@@ -58,7 +58,7 @@ export function ExceptionsPage() {
       setSelectedId(null);
       setMessage("修改已保存，请点击「重新校对」执行规则验证。");
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "保存失败");
+      setError(errorMessage(err, "保存失败"));
     } finally {
       setBusy(false);
     }
@@ -72,7 +72,7 @@ export function ExceptionsPage() {
       await reload();
       setMessage(`重新校对完成：${result.resolved} 项已通过，${result.remaining} 项仍需处理。`);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "校对失败");
+      setError(errorMessage(err, "校对失败"));
     } finally {
       setBusy(false);
     }

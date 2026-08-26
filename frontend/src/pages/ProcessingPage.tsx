@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api";
-import { ApiError, yuan } from "../api/client";
-import { Hero, StatusPill } from "../components/ui";
-import type { ConfigStatus, MediaRecord, Task, TaskStatus, ValidateTaskResponse } from "../types";
+import { errorMessage, yuan } from "../api/client";
+import { Hero, IssueList, StatusPill } from "../components/ui";
+import type { ConfigStatus, MediaRecord, Task, TaskIssue, TaskStatus, ValidateTaskResponse } from "../types";
 import { TASK_STATUS_LABEL } from "../types";
 
 function statusKind(status: TaskStatus): "done" | "warn" | "bad" | "idle" {
@@ -10,6 +10,11 @@ function statusKind(status: TaskStatus): "done" | "warn" | "bad" | "idle" {
   if (status === "failed") return "bad";
   if (status === "needs_correction" || status === "running") return "warn";
   return "idle";
+}
+
+function sortIssues(issues: TaskIssue[]) {
+  const rank = { critical: 0, error: 1, warning: 2 };
+  return [...issues].sort((a, b) => (rank[a.severity] ?? 9) - (rank[b.severity] ?? 9));
 }
 
 export function ProcessingPage() {
@@ -24,20 +29,24 @@ export function ProcessingPage() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    api.configStatus().then(setConfig).catch(() => undefined);
+    api.configStatus()
+      .then(setConfig)
+      .catch((err: unknown) => setError(errorMessage(err, "无法加载配置状态")));
     api.latestTask()
       .then((latest) => {
         if (latest && ["running", "completed", "failed", "needs_correction", "ready"].includes(latest.status)) {
           setTask(latest);
         }
       })
-      .catch(() => undefined);
+      .catch((err: unknown) => setError(errorMessage(err, "无法加载最近任务")));
   }, []);
 
   useEffect(() => {
     if (!task || task.status !== "running") return;
     const timer = window.setInterval(() => {
-      void api.getTask(task.task_id).then(setTask).catch(() => undefined);
+      void api.getTask(task.task_id)
+        .then(setTask)
+        .catch((err: unknown) => setError(errorMessage(err, "轮询任务状态失败")));
     }, 1500);
     return () => window.clearInterval(timer);
   }, [task]);
@@ -46,6 +55,11 @@ export function ProcessingPage() {
     () => (validate?.records ?? []).filter((row) => row.match_status === "unmatched"),
     [validate],
   );
+
+  const displayIssues = useMemo(() => {
+    const source = (task?.issues?.length ? task.issues : validate?.issues) ?? [];
+    return sortIssues(source);
+  }, [task, validate]);
 
   async function start() {
     if (!file) {
@@ -68,7 +82,7 @@ export function ProcessingPage() {
         setMessage(`输入预检暂停：发现 ${payload.records.filter((r) => r.match_status === "unmatched").length} 个媒体名称无法匹配媒体库。`);
       }
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "处理失败");
+      setError(errorMessage(err, "处理失败"));
     } finally {
       setBusy(false);
     }
@@ -89,7 +103,7 @@ export function ProcessingPage() {
         setError(`仍有 ${payload.records.filter((r) => r.match_status === "unmatched").length} 个媒体名称未匹配，请继续修改。`);
       }
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "重新校验失败");
+      setError(errorMessage(err, "重新校验失败"));
     } finally {
       setBusy(false);
     }
@@ -108,6 +122,9 @@ export function ProcessingPage() {
   const progress = task && task.progress.total_nodes
     ? task.progress.completed_nodes.length / task.progress.total_nodes
     : 0;
+
+  const warningCount = displayIssues.filter((item) => item.severity === "warning").length;
+  const blockingCount = displayIssues.length - warningCount;
 
   return (
     <>
@@ -207,14 +224,28 @@ export function ProcessingPage() {
         </div>
       ) : null}
 
-      {task?.status === "failed" ? <div className="alert error">后端处理失败：{task.error || "请查看任务问题详情"}</div> : null}
+      {task?.status === "failed" ? (
+        <div className="alert error">
+          后端处理失败：{task.error || "请查看下方问题列表"}
+        </div>
+      ) : null}
 
-      {task?.status === "completed" ? (
+      {task?.status === "completed" && blockingCount ? (
+        <div className="alert warn">
+          任务已完成，但仍有 {blockingCount} 条错误未入账
+          {warningCount ? `、${warningCount} 条警告` : ""}。明细见下方问题列表。
+        </div>
+      ) : null}
+
+      {task?.status === "completed" && !blockingCount ? (
         <div className="alert success">
           最近一次任务已完成（{TASK_STATUS_LABEL[task.status]}）。可前往约稿资料、费用分析和文件输出查看结果。
           {task.quote_summary ? ` 费用合计 ${yuan(task.quote_summary.total_fee)}。` : null}
+          {warningCount ? ` 另有 ${warningCount} 条警告。` : null}
         </div>
       ) : null}
+
+      <IssueList issues={displayIssues} />
 
       {task ? (
         <p style={{ color: "var(--muted)" }}>

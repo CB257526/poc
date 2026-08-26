@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api";
-import { ApiError, formatDateTime, yuan } from "../api/client";
-import { Hero, StatusPill } from "../components/ui";
+import { errorMessage, formatDateTime, yuan } from "../api/client";
+import { Hero, IssueList, StatusPill } from "../components/ui";
 import type { QuoteDetail, Task, TaskStatus } from "../types";
 import { TASK_STATUS_LABEL } from "../types";
 
@@ -40,7 +40,7 @@ export function QuotesPage() {
         const preferred = items.find((item) => item.status === "completed") ?? items[0];
         setTaskId(preferred?.task_id ?? "");
       })
-      .catch((err: unknown) => setError(err instanceof ApiError ? err.message : "加载失败"))
+      .catch((err: unknown) => setError(errorMessage(err, "加载失败")))
       .finally(() => setLoaded(true));
   }, []);
 
@@ -65,14 +65,15 @@ export function QuotesPage() {
     setState("全部");
   }, [taskId]);
 
-  if (error) return <div className="alert error">{error}</div>;
-  if (!loaded) return <p>加载中…</p>;
+  if (!loaded && !error) return <p>加载中…</p>;
 
   const completed = task?.status === "completed";
+  const issues = task?.issues ?? [];
 
   return (
     <>
       <Hero title="约稿资料" subtitle="选择任意一次处理记录，查看并筛选该次约稿明细" />
+      {error ? <div className="alert error">{error}</div> : null}
       {tasks.length ? (
         <div className="panel">
           <h2>处理记录</h2>
@@ -103,11 +104,13 @@ export function QuotesPage() {
             </p>
           ) : null}
         </div>
-      ) : (
+      ) : error ? null : (
         <div className="alert info">尚无任务。请先在「数据处理」上传链接表。</div>
       )}
 
-      {task && completed && details.length ? (
+      {task?.status === "failed" ? (
+        <div className="alert error">该次处理失败：{task.error || "请查看下方问题列表"}</div>
+      ) : task && completed && details.length ? (
         <div className="alert success">正在展示该次处理的可入账约稿明细。</div>
       ) : task && completed ? (
         <div className="alert info">该次任务已完成，但没有可入账的约稿记录。</div>
@@ -116,6 +119,8 @@ export function QuotesPage() {
           该次任务「{TASK_STATUS_LABEL[task.status]}」，完成后才会生成约稿明细。
         </div>
       ) : null}
+
+      <IssueList issues={issues} title="该次处理问题" />
 
       {details.length ? (
         <>

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
-import { ApiError, formatDateTime } from "../api/client";
+import { errorMessage, formatDateTime } from "../api/client";
 import { Hero, StatusPill } from "../components/ui";
 import { ROLE_LABEL, STATUS_LABEL, type Role, type User, type UserStatus } from "../types";
 
@@ -20,7 +20,7 @@ export function UsersPage() {
   }
 
   useEffect(() => {
-    reload().catch((err: unknown) => setError(err instanceof ApiError ? err.message : "加载失败"));
+    reload().catch((err: unknown) => setError(errorMessage(err, "加载失败")));
   }, []);
 
   async function patch(id: string, next: { role?: Role; status?: UserStatus }) {
@@ -30,7 +30,7 @@ export function UsersPage() {
       await reload();
       setMessage("用户信息已更新");
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "更新失败");
+      setError(errorMessage(err, "更新失败"));
     }
   }
 

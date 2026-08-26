@@ -117,6 +117,7 @@ def preview_validate(input_path: str, corrections: dict[str, str] | None = None)
             issues.append(
                 {
                     "record_id": record_id,
+                    "node_id": "node_00",
                     "code": "MEDIA_NOT_IN_LIBRARY",
                     "message": "媒体名称无法匹配媒体库",
                     "severity": "error",
@@ -139,6 +140,7 @@ def workflow_issues(context) -> list[dict]:
         items.append(
             {
                 "record_id": issue.record_id,
+                "node_id": issue.node_id,
                 "code": issue.code,
                 "message": issue.message,
                 "severity": severity,

@@ -55,6 +55,7 @@ export interface MediaRecord {
 
 export interface TaskIssue {
   record_id?: string;
+  node_id?: string;
   code: string;
   message: string;
   severity: "warning" | "error" | "critical";
@@ -228,6 +229,22 @@ export const NODE_LABELS = [
   "费用计算",
   "付款生成",
 ] as const;
+
+export const NODE_ID_LABEL: Record<string, string> = {
+  node_00: "输入预检",
+  node_01: "链接解析",
+  node_02: "资料整理",
+  node_03: "媒体匹配",
+  node_04: "账户补全",
+  node_05: "费用计算",
+  node_06: "付款生成",
+};
+
+export const ISSUE_SEVERITY_LABEL: Record<TaskIssue["severity"], string> = {
+  warning: "警告",
+  error: "错误",
+  critical: "严重",
+};
 
 export const PAGE_ROLES: Record<string, Role[]> = {
   "/": ["admin", "operator", "finance", "viewer"],

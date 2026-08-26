@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { api } from "../api";
-import { ApiError, getAccessToken } from "../api/client";
+import { errorMessage, getAccessToken } from "../api/client";
 import type { User } from "../types";
 
 interface AuthState {
@@ -46,8 +46,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const session = await api.login(email, password);
       setUser(session.user);
     } catch (err) {
-      const message = err instanceof ApiError ? err.message : "登录失败";
-      setError(message);
+      setError(errorMessage(err, "登录失败"));
       throw err;
     }
   }, []);

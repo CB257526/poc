@@ -96,6 +96,15 @@ export function downloadBlob(blob: Blob, filename: string) {
   URL.revokeObjectURL(url);
 }
 
+export function errorMessage(err: unknown, fallback = "请求失败") {
+  if (err instanceof ApiError) return err.message;
+  if (err instanceof TypeError) {
+    return "无法连接后端，请确认服务已启动（默认 http://127.0.0.1:8000）";
+  }
+  if (err instanceof Error && err.message) return err.message;
+  return fallback;
+}
+
 export function yuan(value: number) {
   return `¥${value.toLocaleString("zh-CN", { maximumFractionDigits: 0 })}`;
 }

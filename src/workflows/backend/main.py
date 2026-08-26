@@ -4,6 +4,7 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .config_store import ensure_config_rows
 from .database import SessionLocal, init_db
@@ -28,6 +29,17 @@ app.add_middleware(
 app.add_exception_handler(ApiError, api_error_handler)
 
 
+@app.exception_handler(StarletteHTTPException)
+async def http_error_handler(_request: Request, exc: StarletteHTTPException):
+    detail = exc.detail
+    if isinstance(detail, dict):
+        return JSONResponse(status_code=exc.status_code, content=detail)
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": str(detail) if detail else "请求失败", "code": "HTTP_ERROR"},
+    )
+
+
 @app.exception_handler(RequestValidationError)
 async def validation_error_handler(_request: Request, exc: RequestValidationError):
     field_errors = {}
@@ -41,6 +53,23 @@ async def validation_error_handler(_request: Request, exc: RequestValidationErro
             "detail": next(iter(field_errors.values()), "参数不合法"),
             "code": "VALIDATION_ERROR",
             "field_errors": field_errors,
+        },
+    )
+
+
+@app.exception_handler(Exception)
+async def unhandled_error_handler(_request: Request, exc: Exception):
+    if isinstance(exc, ApiError):
+        return await api_error_handler(_request, exc)
+    if isinstance(exc, StarletteHTTPException):
+        return await http_error_handler(_request, exc)
+    if isinstance(exc, RequestValidationError):
+        return await validation_error_handler(_request, exc)
+    return JSONResponse(
+        status_code=500,
+        content={
+            "detail": "服务器内部错误，请稍后重试或查看后端日志",
+            "code": "INTERNAL",
         },
     )
 

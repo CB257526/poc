@@ -14,6 +14,7 @@ from .models import FeeException, Task
 from .task_support import (
     dumps,
     files_payload,
+    loads,
     media_fee_from_quote_sheet,
     media_fee_from_summary_sheet,
     quote_summary_from_context,
@@ -61,6 +62,7 @@ def execute_workflow(task_id: str) -> None:
                         "current_node": context.current_node,
                     }
                 )
+                row.issues_json = dumps(workflow_issues(context))
                 inner.commit()
             finally:
                 inner.close()
@@ -109,6 +111,17 @@ def execute_workflow(task_id: str) -> None:
             task.status = "failed"
             task.error = str(exc)
             task.updated_at = datetime.now()
+            issues = loads(task.issues_json, [])
+            issues.append(
+                {
+                    "record_id": None,
+                    "node_id": None,
+                    "code": "WORKFLOW_CRASH",
+                    "message": str(exc),
+                    "severity": "critical",
+                }
+            )
+            task.issues_json = dumps(issues)
             db.commit()
     finally:
         db.close()

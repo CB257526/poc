@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { api } from "../api";
-import { ApiError, yuan } from "../api/client";
-import { Hero, Metric } from "../components/ui";
+import { errorMessage, yuan } from "../api/client";
+import { Hero, IssueList, Metric } from "../components/ui";
 import { NODE_LABELS, TASK_STATUS_LABEL, type DashboardOverview } from "../types";
 
 export function OverviewPage() {
@@ -11,7 +11,7 @@ export function OverviewPage() {
 
   useEffect(() => {
     api.overview().then(setData).catch((err: unknown) => {
-      setError(err instanceof ApiError ? err.message : "加载失败");
+      setError(errorMessage(err, "加载失败"));
     });
   }, []);
 
@@ -77,6 +77,7 @@ export function OverviewPage() {
           {!data.config_ready ? <p className="alert warn">基础配置未齐，管理员需先上传媒体库、账户和费用表。</p> : null}
         </div>
       </div>
+      <IssueList issues={data.latest_task?.issues ?? []} title="最近任务问题" />
     </>
   );
 }

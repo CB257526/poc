@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
-import { ApiError } from "../api/client";
+import { errorMessage } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 
 export function RegisterPage() {
@@ -20,7 +20,7 @@ export function RegisterPage() {
       const text = await register({ name, email, password });
       setMessage(text);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "注册失败");
+      setError(errorMessage(err, "注册失败"));
     } finally {
       setSubmitting(false);
     }

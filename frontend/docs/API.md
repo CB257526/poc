@@ -382,6 +382,7 @@ Body 为 **Excel 二进制**（不是 multipart）。对应文件 `1-链接.xlsx
   "issues": [
     {
       "record_id": "rec_0003",
+      "node_id": "node_00",
       "code": "MEDIA_NOT_IN_LIBRARY",
       "message": "媒体名称无法匹配媒体库",
       "severity": "error"
@@ -400,6 +401,7 @@ Body 为 **Excel 二进制**（不是 multipart）。对应文件 `1-链接.xlsx
 | suggested_name | 未匹配时的近似建议；已匹配为空字符串 |
 | allowed_media_names | 媒体库标准名全集，前端下拉只允许这些值 |
 | issues[].code | 未匹配必须是 `MEDIA_NOT_IN_LIBRARY` |
+| issues[].node_id | 产生该问题的节点，预检为 `node_00`；工作流为 `node_01`–`node_06`。未归属节点时可省略或为 `null` |
 
 全部匹配时 `status` 为 `ready`，`issues` 为空。文件无法解析：`400`，例如「没有读取到有效的媒体与链接」。
 
@@ -488,11 +490,23 @@ GET /api/v1/tasks/{task_id}
     { "key": "quote_detail", "filename": "2-约稿资料_完成版.xlsx", "ready": true },
     { "key": "payment", "filename": "6-付款.xlsx", "ready": true }
   ],
-  "issues": []
+  "issues": [
+    {
+      "record_id": "rec_0001",
+      "node_id": "node_03",
+      "code": "MEDIA_NOT_FOUND",
+      "message": "媒体库未找到该媒体",
+      "severity": "error"
+    }
+  ]
 }
 ```
 
 `quote_summary.details` 只含可入账记录。运行中 `quote_summary` 可为 `null`，`files` 为空数组。失败时 `error` 为中文原因。
+
+`issues` 来自工作流 `context.issues`（含 `node_id`）。任务仍在跑时也会随进度写入，前端应展示而不是忽略。工作流未捕获的崩溃会追加 `code=WORKFLOW_CRASH`、`severity=critical`。
+
+前端约定：`GET /tasks/{id}` 轮询失败、后端宕机（`TypeError`）或 `500 INTERNAL` 都要展示 `detail`，不要吞掉。
 
 > 兼容原 Streamlit：若 `details` 暂用中文 key（`媒体` `平台` `文章类型` `媒体等级` `粉丝量` `基础金额` `费用` `标题` `链接` `发布日期`），后端 **不要再这样返回**。请用本文英文字段。
 

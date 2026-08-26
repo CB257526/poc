@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
-import { ApiError, formatDateTime } from "../api/client";
+import { errorMessage, formatDateTime } from "../api/client";
 import { Hero, StatusPill } from "../components/ui";
 import type { ConfigKind, ConfigStatus } from "../types";
 
@@ -19,7 +19,7 @@ export function ConfigPage() {
   useEffect(() => {
     api.configStatus()
       .then(setStatus)
-      .catch((err: unknown) => setError(err instanceof ApiError ? err.message : "加载失败"));
+      .catch((err: unknown) => setError(errorMessage(err, "加载失败")));
   }, []);
 
   async function upload(kind: ConfigKind, file: File | undefined) {
@@ -31,7 +31,7 @@ export function ConfigPage() {
       setStatus(next);
       setMessage(`${file.name} 已保存`);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "上传失败");
+      setError(errorMessage(err, "上传失败"));
     } finally {
       setBusy("");
     }
