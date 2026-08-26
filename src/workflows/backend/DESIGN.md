@@ -213,9 +213,11 @@ Body：`{ "media_name_corrections": { "<row_number>": "<媒体库标准名>" } }
 
 ### 5.7 查任务
 
+**GET `/tasks`**（已登录）→ `Task[]`，按 `created_at` 倒序。约稿资料页列出每一次处理，点选后看该次 `quote_summary.details`。没有任务返回 `[]`。
+
 **GET `/tasks/{id}`**（已登录）→ Task：status、progress、quote_summary、files、issues。运行中 `quote_summary` 可为 null。
 
-**GET `/tasks/latest`** → 最近一条；没有则 JSON `null`（200）。
+**GET `/tasks/latest`** → 最近一条；没有则 JSON `null`（200）。文件输出页仍用这条。
 
 ### 5.8 下载
 

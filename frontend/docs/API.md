@@ -496,7 +496,17 @@ GET /api/v1/tasks/{task_id}
 
 > 兼容原 Streamlit：若 `details` 暂用中文 key（`媒体` `平台` `文章类型` `媒体等级` `粉丝量` `基础金额` `费用` `标题` `链接` `发布日期`），后端 **不要再这样返回**。请用本文英文字段。
 
-### 6.5 最近一次任务
+### 6.5 任务列表
+
+```http
+GET /api/v1/tasks
+```
+
+已登录可读。按 `created_at` **倒序**返回 `Task[]`（与 6.4 同一对象）。没有任务时返回 `[]`。
+
+约稿资料页用这个接口列出每一次处理记录，再按选中的 `task_id` 展示该次 `quote_summary.details`。不要只返回最近一条。
+
+### 6.6 最近一次任务
 
 ```http
 GET /api/v1/tasks/latest
@@ -504,9 +514,9 @@ GET /api/v1/tasks/latest
 
 当前用户可见范围内最近一条任务。没有则 `200 null` 或 `404`（前端按空处理，建议 `200 null`）。
 
-约稿资料页、文件输出页都打这个接口。
+文件输出页、首页仍可打这个接口拿最近一条。约稿资料页请用 6.5 列表。
 
-### 6.6 下载单个结果文件
+### 6.7 下载单个结果文件
 
 ```http
 GET /api/v1/tasks/{task_id}/files/{file_key}
@@ -527,7 +537,7 @@ Content-Disposition: attachment; filename="2-约稿资料_完成版.xlsx"
 
 任务未完成或文件未生成：`409` 或 `404`。
 
-### 6.7 打包下载
+### 6.8 打包下载
 
 ```http
 GET /api/v1/tasks/{task_id}/files/archive
@@ -726,8 +736,9 @@ GET /health
 | POST | `/api/v1/tasks/validate` | 数据处理 · 开始处理 |
 | POST | `/api/v1/tasks/{id}/corrections` | 数据处理 · 重新校验 |
 | POST | `/api/v1/tasks/{id}/run` | 预检通过后自动调用 |
+| GET | `/api/v1/tasks` | 约稿资料 · 历次处理 |
 | GET | `/api/v1/tasks/{id}` | 处理中轮询 |
-| GET | `/api/v1/tasks/latest` | 约稿资料、文件输出 |
+| GET | `/api/v1/tasks/latest` | 文件输出、首页兼容 |
 | GET | `/api/v1/tasks/{id}/files/{key}` | 文件输出 |
 | GET | `/api/v1/tasks/{id}/files/archive` | 打包下载 |
 | GET | `/api/v1/analytics/monthly` | 费用分析 |

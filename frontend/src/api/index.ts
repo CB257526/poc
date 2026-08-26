@@ -89,6 +89,10 @@ export const api = {
     return request("/api/v1/tasks/latest");
   },
 
+  async listTasks(): Promise<Task[]> {
+    return request("/api/v1/tasks");
+  },
+
   async quotes(): Promise<{ task: Task | null; details: QuoteDetail[] }> {
     const task = await request<Task | null>("/api/v1/tasks/latest");
     return {

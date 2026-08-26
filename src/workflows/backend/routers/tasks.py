@@ -1,4 +1,4 @@
-"""任务：validate / corrections / run / get / latest / files。"""
+"""任务：validate / corrections / run / list / get / latest / files。"""
 
 from __future__ import annotations
 
@@ -156,6 +156,15 @@ def run_task(
     db.commit()
     background_tasks.add_task(execute_workflow, task_id)
     return {"task_id": task.id, "status": "running"}
+
+
+@router.get("")
+def list_tasks(
+    db: Session = Depends(get_db),
+    _user: User = Depends(get_current_user),
+):
+    tasks = db.query(Task).order_by(Task.created_at.desc()).all()
+    return [task_payload(task) for task in tasks]
 
 
 @router.get("/latest")
