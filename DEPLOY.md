@@ -9,7 +9,7 @@
 - 包管理：**uv**（不要用 pip 直接装依赖）
 - Python：**>= 3.12**（仓库 `.python-version` 为 `3.14`，uv 会按这个版本拉解释器）
 - 入口：`uv run python -m workflows run ...`
-- 知乎爬取必须 **有界面的 Chromium**（headful），无桌面的 Linux 要用 Xvfb
+- 知乎爬取：**推荐安装系统 Google Chrome**，无头即可；没有 Chrome 时回退 Playwright Chromium（知乎需 headful / Xvfb）
 
 ---
 
@@ -56,26 +56,47 @@ uname -m          # arm64 / x86_64
 
 公司网络若拦截外网，先配好代理 / 镜像再继续。
 
-### 1.3 Linux 额外软件（无桌面服务器必装）
+### 1.3 Linux 浏览器（推荐系统 Chrome）
 
-知乎必须开有界面的浏览器。没有显示器时用 Xvfb：
+**新方案（2026-08）**：安装系统 Google Chrome，知乎可无头抓取，不需要 Xvfb。
 
 Debian / Ubuntu：
 
 ```bash
-sudo apt-get update
-sudo apt-get install -y xvfb
+wget https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
+sudo apt install -y ./google-chrome-stable_current_amd64.deb
+google-chrome --version
+```
+
+或通过 APT 源（持续更新）：
+
+```bash
+wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
+sudo sh -c 'echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list'
+sudo apt update
+sudo apt install -y google-chrome-stable
 ```
 
 RHEL / CentOS / Rocky：
 
 ```bash
+wget https://dl.google.com/linux/direct/google-chrome-stable_current_x86_64.rpm
+sudo yum install -y ./google-chrome-stable_current_x86_64.rpm
+```
+
+macOS 自带 Chrome 可直接用；没有 Chrome 的话用 Homebrew：`brew install --cask google-chrome`。
+
+**旧方案（回退）**：没有 Chrome 时用 Playwright 自带 Chromium，知乎仍需 headful（无桌面需 Xvfb）。
+
+```bash
+# Debian / Ubuntu
+sudo apt-get install -y xvfb
+
+# RHEL / CentOS
 sudo yum install -y xorg-x11-server-Xvfb
 ```
 
-Playwright 的系统库（字体、gtk 等）在后面 `playwright install-deps` 一步装，这里先不用手装一堆包。
-
-macOS 一般不需要 Xvfb，本机有图形界面即可。
+命令要用 `xvfb-run -a` 包裹（见第 7 节）。**推荐直接装系统 Chrome**，更简洁。
 
 ---
 
@@ -159,7 +180,11 @@ uv add --dev pytest
 
 ## 5. 安装 Playwright 浏览器
 
-Python 包里的 `playwright` ≠ 浏览器本体。必须再装 Chromium：
+**方案 A（推荐）**：用系统 Chrome，不装 Playwright 浏览器。
+
+系统已有 Chrome（第 1.3 节装的）即可，爬虫会自动调用。
+
+**方案 B（回退）**：没有系统 Chrome 时，装 Playwright 自带 Chromium。
 
 ```bash
 uv run playwright install chromium
@@ -173,7 +198,7 @@ uv run playwright install-deps chromium
 
 macOS 通常不需要 `install-deps`。
 
-验证（无界面探测，不等于知乎能爬；知乎还要 headful）：
+验证（无界面探测，不等于知乎能爬；知乎还要看是否有系统 Chrome）：
 
 ```bash
 uv run python - <<'PY'
@@ -225,9 +250,9 @@ table/
 
 在项目根目录：
 
-### macOS / 有桌面的 Linux
+### macOS / 有系统 Chrome 的 Linux
 
-会弹出 Chromium 窗口（知乎反爬需要），不要关。
+直接运行，无头抓取知乎（不会弹窗）：
 
 ```bash
 uv run python -m workflows run --input table/1-链接.xlsx
@@ -241,13 +266,36 @@ uv run python -m workflows run \
   --table-dir ./table
 ```
 
+### Linux 无桌面、没有 Chrome（回退 Xvfb）
+
+如果用 Playwright Chromium 且有知乎链接，需要 Xvfb：
+
+```bash
+xvfb-run -a uv run python -m workflows run --input table/1-链接.xlsx
+```
+
+**推荐直接装系统 Chrome（见第 1.3 节），无需 Xvfb。**
+
+样例表规模（约 6 条主链接）在本机大约 **20 秒**；服务器网络差会更久。
+  --input table/1-链接.xlsx \
+  --table-dir ./table
+```
+
 JSON 报告：
 
 ```bash
 uv run python -m workflows run --input table/1-链接.xlsx --output json
 ```
 
-### 无桌面 Linux（用 Xvfb）
+### 无桌面 Linux（推荐系统 Chrome）
+
+有系统 Chrome（第 1.3 节）时直接运行，无头模式：
+
+```bash
+uv run python -m workflows run --input table/1-链接.xlsx
+```
+
+没有 Chrome、用 Playwright Chromium 时需 Xvfb：
 
 ```bash
 xvfb-run -a uv run python -m workflows run --input table/1-链接.xlsx
@@ -303,6 +351,12 @@ ls -l output/<run_id>/
 弱服务器示例：
 
 ```bash
+WEB_SCRAPER_CONCURRENCY=1 uv run python -m workflows run --input table/1-链接.xlsx
+```
+
+没有 Chrome、用 Chromium + Xvfb：
+
+```bash
 WEB_SCRAPER_CONCURRENCY=1 xvfb-run -a \
   uv run python -m workflows run --input table/1-链接.xlsx
 ```
@@ -323,7 +377,13 @@ logs/              # 若启用文件日志
 
 部署账号需要对项目目录可写。用 systemd / cron 时，`WorkingDirectory` 必须是仓库根目录，否则相对路径 `./table`、`./output` 会找不到。MCP 与 HTTP 后端同时跑时，务必分目录：`--runtime-dir` / `WORKFLOW_RUNTIME_DIR`。
 
-cron 示例（每天 9 点，Linux + Xvfb）：
+cron 示例（每天 9 点，有系统 Chrome）：
+
+```cron
+0 9 * * * cd /opt/workflow && /home/deploy/.local/bin/uv run python -m workflows run --input table/1-链接.xlsx >> logs/cron.log 2>&1
+```
+
+没有 Chrome、用 Chromium + Xvfb：
 
 ```cron
 0 9 * * * cd /opt/workflow && /usr/bin/xvfb-run -a /home/deploy/.local/bin/uv run python -m workflows run --input table/1-链接.xlsx >> logs/cron.log 2>&1
@@ -351,12 +411,13 @@ uv run pytest tests/ -q
 | `uv: command not found` | `export PATH="$HOME/.local/bin:$PATH"`，或重新装 uv |
 | `requires-python >=3.12` | `uv python install` |
 | `ModuleNotFoundError: playwright` | 在仓库根执行 `uv sync`，用 `uv run` 而不是系统 python |
-| `Executable doesn't exist` / 浏览器启动失败 | `uv run playwright install chromium`；Linux 再 `install-deps` |
-| 知乎标题是安全验证 / 空白 / `zse-ck` | 没走 headful，或无显示。Linux 必须 `xvfb-run`；不要强行 headless 爬知乎 |
+| `Executable doesn't exist` / 浏览器启动失败 | 方案 A：`google-chrome --version` 确认系统 Chrome；方案 B：`uv run playwright install chromium`；Linux 再 `install-deps` |
+| 知乎标题是安全验证 / 空白 / `zse-ck` | 日志看 `channel`：`chrome` 为系统 Chrome；`bundled-chromium` 为 Playwright 自带。自带版本被知乎拦，建议装系统 Chrome（第 1.3 节） |
+| 知乎仍需 Xvfb / 弹窗 | 系统没有 Chrome，回退到自带 Chromium headful。装 Chrome 即可无头：`sudo apt install ./google-chrome-stable_current_amd64.deb` |
 | `Timeout 60000ms exceeded` | 网络慢或并发太大。设 `WEB_SCRAPER_CONCURRENCY=1` 重跑 |
 | `媒体库中没有这个媒体` | `1-链接` 的媒体名和 `3-媒体库` 不一致 |
 | `NO_QUOTE_DETAILS` / 费用为 0 | 等级或文章类型没对上 `5-费用` |
-| 弹出浏览器一闪就挂 | SSH 无 X11 且没用 Xvfb |
+| SSH 无 X11 且用自带 Chromium | Chromium headful 需要显示。方案 A：装系统 Chrome 走无头；方案 B：用 `xvfb-run -a` 包裹命令 |
 | 权限错误写不了 Excel | 检查对 `output/`、`screenshots/` 的写权限 |
 
 日志是 JSON 行，关键事件：`scraping_page`、`scraping_success`、`scraping_failed`、`workflow_completed`。
@@ -369,10 +430,10 @@ uv run pytest tests/ -q
 
 1. [ ] `uv --version` 正常  
 2. [ ] `uv sync` 成功，`.venv` 存在  
-3. [ ] `uv run playwright install chromium` 成功  
-4. [ ] Linux 已装 Xvfb，或机器本身有桌面  
-5. [ ] `table/` 中 1 / 3 / 4 / 5 四张表齐全  
+3. [ ] Linux 已装系统 Chrome（推荐）或 Playwright Chromium  
+4. [ ] `google-chrome --version` 能输出版本号（方案 A）或 `uv run playwright install chromium` 成功（方案 B）  
+5. [ ] `table/` 中 3 / 4 / 5 三张表齐全（表 1 是每次输入，不要放这里）  
 6. [ ] 完整命令退出码 0，节点 7/7  
 7. [ ] `output/<run_id>/` 里约稿资料 2 个 Sheet、付款表为云账户模板  
 
-全部完成后，这台机器就可以按第 7 节日常跑批。
+全部完成后，这台机器就可以按第 10 节日常跑批。

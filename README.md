@@ -4,6 +4,8 @@
 
 **从零部署（uv + 后端 + 前端）：** [部署启动手册.md](./部署启动手册.md)
 
+**公司内网（不能访问公网）：** [内网部署.md](./内网部署.md)
+
 ## 结构
 
 ```
@@ -22,7 +24,7 @@ output/{run_id}/        约稿资料、付款表（自动创建）
 
 ```bash
 uv sync
-uv run playwright install chromium
+uv run playwright install chromium  # 或系统装 Google Chrome（推荐，知乎无头可用）
 PYTHONPATH=src uv run uvicorn workflows.backend.main:app --host 0.0.0.0 --port 8000
 ```
 
