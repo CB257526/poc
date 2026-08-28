@@ -15,7 +15,7 @@ services:
     networks:
       - workflow-network
     volumes:
-      - ./table:/app/table:ro
+      - ./table:/app/table
       - ./runtime:/app/runtime
       - ./output:/app/output
       - ./screenshots:/app/screenshots
