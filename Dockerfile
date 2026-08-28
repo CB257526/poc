@@ -12,9 +12,7 @@ WORKDIR /app
 ENV PYTHONPATH=src \
     PYTHONUNBUFFERED=1 \
     DEBIAN_FRONTEND=noninteractive \
-    WEB_SCRAPER_BROWSER=chrome \
-    UV_OFFLINE=1 \
-    UV_NO_SYNC=1
+    WEB_SCRAPER_BROWSER=chrome
 
 # 安装系统依赖 + Google Chrome
 RUN apt-get update && apt-get install -y --no-install-recommends --fix-missing \
@@ -60,6 +58,10 @@ RUN uv sync --frozen --no-dev --no-install-project
 # 拷贝后端代码（PYTHONPATH=src，不需要再 uv run / hatchling）
 COPY src/ ./src/
 COPY table/ ./table/
+
+# 运行时禁止 uv 再访问 PyPI（构建阶段不能设 UV_OFFLINE，否则 uv sync 下不了包）
+ENV UV_OFFLINE=1 \
+    UV_NO_SYNC=1
 
 # 创建运行时目录
 RUN mkdir -p runtime output screenshots logs
