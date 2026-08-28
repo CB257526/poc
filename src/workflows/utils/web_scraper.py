@@ -42,10 +42,87 @@ STEALTH_INIT_SCRIPT = """
 _TRUE_FLAGS = {"1", "true", "yes", "on"}
 _SYSTEM_CHANNELS = {"chrome", "chromium", "msedge", "chrome-beta", "chrome-dev"}
 
+# 这些状态码几乎不可能再解析出标题/日期，继续等 networkidle / 截图只会拖死整批。
+# 不含 403/429：知乎反爬经常先给 403，真实 Chrome 仍可能渲染出正文。
+FAIL_FAST_STATUS = {400, 401, 404, 405, 410, 451, 500, 502, 503, 504}
+
+NETWORK_ERROR_MARKERS = (
+    "net::ERR_NAME_NOT_RESOLVED",
+    "net::ERR_CONNECTION_REFUSED",
+    "net::ERR_CONNECTION_TIMED_OUT",
+    "net::ERR_CONNECTION_RESET",
+    "net::ERR_CONNECTION_ABORTED",
+    "net::ERR_INTERNET_DISCONNECTED",
+    "net::ERR_ADDRESS_UNREACHABLE",
+    "net::ERR_NETWORK_CHANGED",
+    "net::ERR_EMPTY_RESPONSE",
+    "net::ERR_TIMED_OUT",
+    "net::ERR_SSL_PROTOCOL_ERROR",
+    "net::ERR_CERT_",
+    "NS_ERROR_UNKNOWN_HOST",
+    "NS_ERROR_CONNECTION_REFUSED",
+)
+
+_MISSING_PAGE_MARKERS = (
+    "404 not found",
+    "404页面",
+    "页面不存在",
+    "找不到页面",
+    "内容不存在",
+    "该内容已被删除",
+    "page not found",
+    "sorry, the page you visited does not exist",
+)
+
 
 def _env_flag(name: str, env: Optional[Mapping[str, str]] = None) -> bool:
     raw = (env if env is not None else os.environ).get(name, "").strip().lower()
     return raw in _TRUE_FLAGS
+
+
+def _env_int(name: str, default: int, env: Optional[Mapping[str, str]] = None) -> int:
+    raw = (env if env is not None else os.environ).get(name, "").strip()
+    if not raw:
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        return default
+
+
+def looks_like_missing_page(title: str) -> bool:
+    """HTTP 仍可能是 200，但标题已经是站点自己的 404 页。"""
+    text = (title or "").strip().lower()
+    if not text:
+        return False
+    if text in {"404", "404 not found"}:
+        return True
+    return any(marker in text for marker in _MISSING_PAGE_MARKERS)
+
+
+def classify_scrape_failure(
+    status: Optional[int],
+    final_url: str = "",
+    error: Optional[str] = None,
+) -> Optional[str]:
+    """能立刻判定打不开时返回原因，否则 None（继续解析）。"""
+    err = error or ""
+    if err:
+        if "Timeout" in err or "timeout" in err.lower():
+            return f"页面加载超时: {err[:200]}"
+        for marker in NETWORK_ERROR_MARKERS:
+            if marker in err:
+                return f"网络错误: {marker}"
+        if "net::ERR_" in err:
+            return f"网络错误: {err[:200]}"
+
+    url = (final_url or "").lower()
+    if url.startswith("chrome-error://") or url.startswith("chrome://network-error"):
+        return "网络错误: 浏览器无法打开该地址"
+
+    if status is not None and status in FAIL_FAST_STATUS:
+        return f"HTTP {status}"
+    return None
 
 
 def resolve_channel_candidates(
@@ -339,6 +416,8 @@ async def scrape_publications(records: List[Dict[str, Any]]) -> List[Dict[str, A
     - 没有 Chrome 时回退 Playwright 自带 Chromium（知乎仍需 headful / Xvfb）
     - 环境变量 WEB_SCRAPER_BROWSER 可强制 bundled / chrome
     - 环境变量 WEB_SCRAPER_HEADLESS=1 强制无头（测试用）
+    - WEB_SCRAPER_NAV_TIMEOUT 导航超时毫秒，默认 15000
+    - WEB_SCRAPER_RECORD_TIMEOUT 单条总超时秒，默认 45；404/DNS 等会提前放弃
 
     Args:
         records: 记录列表
@@ -366,8 +445,85 @@ async def scrape_publications(records: List[Dict[str, Any]]) -> List[Dict[str, A
             await context.add_init_script(STEALTH_INIT_SCRIPT)
 
             try:
-                concurrency = int(os.environ.get("WEB_SCRAPER_CONCURRENCY", "2"))
-                semaphore = asyncio.Semaphore(concurrency)
+                concurrency = _env_int("WEB_SCRAPER_CONCURRENCY", 2)
+                nav_timeout_ms = _env_int("WEB_SCRAPER_NAV_TIMEOUT", 15000)
+                # 正常页还要解析 + 截图，不能压得太短；坏链靠 HTTP/网络错误立刻停，不靠这个。
+                record_timeout_s = _env_int("WEB_SCRAPER_RECORD_TIMEOUT", 45)
+                semaphore = asyncio.Semaphore(max(1, concurrency))
+
+                async def fetch_and_parse(record, url: str, platform: str) -> None:
+                    page = await context.new_page()
+                    page.set_default_timeout(nav_timeout_ms)
+                    try:
+                        await asyncio.sleep(random.uniform(0.2, 0.6))
+                        try:
+                            response = await page.goto(
+                                url,
+                                wait_until="domcontentloaded",
+                                timeout=nav_timeout_ms,
+                            )
+                        except Exception as e:
+                            reason = classify_scrape_failure(None, page.url, str(e))
+                            record["scrape_error"] = reason or str(e)
+                            logger.warning(
+                                "scrape_aborted",
+                                url=url,
+                                reason=record["scrape_error"],
+                            )
+                            return
+
+                        status = response.status if response is not None else None
+                        reason = classify_scrape_failure(status, page.url, None)
+                        if reason is None:
+                            try:
+                                title = await page.title()
+                            except Exception:
+                                title = ""
+                            if looks_like_missing_page(title):
+                                reason = f"页面不存在（{title[:80]}）"
+                        if reason:
+                            record["scrape_error"] = reason
+                            logger.warning(
+                                "scrape_aborted",
+                                url=url,
+                                reason=reason,
+                                status=status,
+                            )
+                            return
+
+                        try:
+                            await page.wait_for_selector(
+                                "h1, .QuestionHeader-title, .Post-Title, .ContentItem-title",
+                                timeout=8000,
+                                state="visible",
+                            )
+                        except Exception:
+                            await asyncio.sleep(0.8)
+
+                        html = await page.content()
+                        logger.info(
+                            "page_loaded",
+                            url=url,
+                            html_length=len(html),
+                            has_zse_ck="zse-ck" in html,
+                            status=status,
+                        )
+
+                        parser = get_parser(platform)
+                        result = await parser.parse(page, url)
+
+                        logger.info(
+                            "scraping_success",
+                            url=url,
+                            title=result.get("title", "")[:50],
+                        )
+
+                        record["scraped_title"] = result.get("title")
+                        record["scraped_publish_date"] = result.get("publish_date")
+                        record["scraped_article_type"] = result.get("article_type")
+                        record["scraped_screenshot"] = result.get("screenshot_path")
+                    finally:
+                        await page.close()
 
                 async def scrape_one_record(record):
                     async with semaphore:
@@ -379,50 +535,23 @@ async def scrape_publications(records: List[Dict[str, Any]]) -> List[Dict[str, A
                         logger.info("scraping_page", url=url, platform=platform)
 
                         try:
-                            page = await context.new_page()
-                            page.set_default_timeout(60000)
-
-                            try:
-                                await asyncio.sleep(random.uniform(0.5, 1.5))
-                                await page.goto(url, wait_until="load")
-
-                                try:
-                                    await page.wait_for_selector(
-                                        "h1, .QuestionHeader-title, .Post-Title, .ContentItem-title",
-                                        timeout=10000,
-                                        state="visible",
-                                    )
-                                except Exception:
-                                    await asyncio.sleep(random.uniform(1.5, 2.5))
-
-                                html = await page.content()
-                                logger.info(
-                                    "page_loaded",
-                                    url=url,
-                                    html_length=len(html),
-                                    has_zse_ck="zse-ck" in html,
-                                )
-
-                                parser = get_parser(platform)
-                                result = await parser.parse(page, url)
-
-                                logger.info(
-                                    "scraping_success",
-                                    url=url,
-                                    title=result.get("title", "")[:50],
-                                )
-
-                                record["scraped_title"] = result.get("title")
-                                record["scraped_publish_date"] = result.get("publish_date")
-                                record["scraped_article_type"] = result.get("article_type")
-                                record["scraped_screenshot"] = result.get("screenshot_path")
-
-                            finally:
-                                await page.close()
-
+                            await asyncio.wait_for(
+                                fetch_and_parse(record, url, platform),
+                                timeout=max(5, record_timeout_s),
+                            )
+                        except asyncio.TimeoutError:
+                            record["scrape_error"] = (
+                                f"页面加载超时（{max(5, record_timeout_s)}s）"
+                            )
+                            logger.error(
+                                "scraping_failed",
+                                url=url,
+                                error=record["scrape_error"],
+                            )
                         except Exception as e:
-                            logger.error("scraping_failed", url=url, error=str(e))
-                            record["scrape_error"] = str(e)
+                            reason = classify_scrape_failure(None, "", str(e))
+                            record["scrape_error"] = reason or str(e)
+                            logger.error("scraping_failed", url=url, error=record["scrape_error"])
 
                 await asyncio.gather(*[scrape_one_record(r) for r in records])
 
