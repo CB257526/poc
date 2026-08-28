@@ -1,0 +1,55 @@
+version: '3.8'
+
+networks:
+  workflow-network:
+    driver: bridge
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: workflow-backend:v1.0
+    container_name: workflow-backend
+    shm_size: '2gb'
+    networks:
+      - workflow-network
+    volumes:
+      - ./table:/app/table:ro
+      - ./runtime:/app/runtime
+      - ./output:/app/output
+      - ./screenshots:/app/screenshots
+    environment:
+      - PYTHONPATH=src
+      - WEB_SCRAPER_CONCURRENCY=2
+      - WEB_SCRAPER_BROWSER=chrome
+      - UV_OFFLINE=1
+      - UV_NO_SYNC=1
+    command: [".venv/bin/uvicorn", "workflows.backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    image: workflow-frontend:v1.0
+    container_name: workflow-frontend
+    ports:
+      - "80:80"
+    networks:
+      - workflow-network
+    depends_on:
+      - backend
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s

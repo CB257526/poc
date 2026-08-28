@@ -1,0 +1,65 @@
+# Git
+.git
+.gitignore
+.github
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv
+venv/
+ENV/
+env/
+*.egg-info/
+dist/
+build/
+
+# 运行时数据（不打包进镜像）
+runtime/
+output/
+screenshots/
+logs/
+web_data/
+
+# 测试
+tests/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# 文档
+docs/
+*.md
+!README.md
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 前端源码（不打包，只打包构建产物 dist/）
+frontend/node_modules/
+frontend/src/
+frontend/public/
+frontend/.env
+frontend/.env.*
+frontend/package-lock.json
+frontend/tsconfig.json
+frontend/vite.config.ts
+frontend/index.html
+
+# macOS
+.DS_Store
+
+# 测试数据
+table_test/
+
+# Docker
+Dockerfile
+docker-compose.yml
+.dockerignore

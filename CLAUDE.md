@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-约稿费用验收系统：LangGraph 工作流（节点 0–6）+ FastAPI `/api/v1` + React 前端。HTTP 合同以 `frontend/docs/API.md` 为准；后端内部流程见 `src/workflows/backend/DESIGN.md`。整站部署看根目录 `部署启动手册.md`，纯 CLI 跑批看 `DEPLOY.md`，内网隔离部署看 `内网部署.md`。
+约稿费用验收系统：LangGraph 工作流（节点 0–6）+ FastAPI `/api/v1` + React 前端。HTTP 合同以 `frontend/docs/API.md` 为准；后端内部流程见 `src/workflows/backend/DESIGN.md`。整站部署看根目录 `部署启动手册.md`，纯 CLI 跑批看 `DEPLOY.md`，内网 Docker 看 `服务器部署手册.md`，不用 Docker 的内网隔离部署看 `内网部署.md`。
 
 ## 命令
 
@@ -79,4 +79,4 @@ SQLite：`runtime/backend.db`（用户/任务）+ `runtime/workflow.db`（工作
 
 `config.yaml` 的 `llm.enabled` 为 false，运行时不调用外部 LLM。`frontend/requirements.txt` 是旧 Streamlit 残留，可忽略。`frontend/index.html` 引用了 Google Fonts，内网无外网时字体请求会失败（有系统中文字体兜底）。
 
-生产构建：nginx 托管 `frontend/dist`，把 `/api/` 反代到 `127.0.0.1:8000`，前端 `VITE_API_BASE_URL` 留空；或把 CORS 与 `VITE_API_BASE_URL` 一起改成真实 origin。
+生产构建：内网 Docker 双容器见 `服务器部署手册.md`。不用 Docker 时 nginx 托管 `frontend/dist`，把 `/api/` 反代到 `127.0.0.1:8000`，前端 `VITE_API_BASE_URL` 留空；或把 CORS 与 `VITE_API_BASE_URL` 一起改成真实 origin。

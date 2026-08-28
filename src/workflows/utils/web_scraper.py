@@ -2,7 +2,7 @@
 
 import asyncio
 import os
-from typing import Dict, List, Mapping, Optional, Sequence
+from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 from playwright.async_api import async_playwright, Browser, BrowserContext, Page
 
