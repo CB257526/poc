@@ -675,7 +675,7 @@ def test_node_06_write_quote_excel_matches_sample_layout(tmp_path):
     from PIL import Image as PILImage
 
     shot = tmp_path / "shot.png"
-    PILImage.new("RGB", (40, 30), color=(20, 80, 160)).save(shot)
+    PILImage.new("RGB", (1920, 1080), color=(20, 80, 160)).save(shot)
 
     node = Node06GeneratePayment()
     details = [
@@ -727,6 +727,16 @@ def test_node_06_write_quote_excel_matches_sample_layout(tmp_path):
     assert ws.cell(2, 20).value.startswith("知乎")
     assert ws.cell(2, 9).value is None
     assert len(ws._images) == 1
+    embedded = ws._images[0]
+    from io import BytesIO
+    blob = embedded._data() if callable(getattr(embedded, "_data", None)) else None
+    assert blob
+    with PILImage.open(BytesIO(blob)) as stored:
+        assert stored.size == (1920, 1080)
+    # 单元格显示尺寸（EMU，9525=1px），不是把原图压成 100px
+    assert embedded.anchor.ext.cx == 320 * 9525
+    assert embedded.anchor.ext.cy == 180 * 9525
+    assert ws.row_dimensions[2].height == 135
     assert ws.cell(5, 17).value == "合计"
     assert ws.cell(5, 18).value == "=SUM(R2:R4)"
 

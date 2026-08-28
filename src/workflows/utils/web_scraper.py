@@ -149,6 +149,7 @@ class WebScraperService:
         # 更完整的浏览器指纹
         self._context = await self._browser.new_context(
             viewport={"width": 1920, "height": 1080},
+            device_scale_factor=2,
             user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
             locale="zh-CN",
             timezone_id="Asia/Shanghai",
@@ -356,6 +357,7 @@ async def scrape_publications(records: List[Dict[str, Any]]) -> List[Dict[str, A
         try:
             context = await browser.new_context(
                 viewport={"width": 1920, "height": 1080},
+                device_scale_factor=2,
                 user_agent=DEFAULT_USER_AGENT,
                 locale="zh-CN",
                 timezone_id="Asia/Shanghai",

@@ -1,6 +1,5 @@
 """快手平台解析器"""
 
-import hashlib
 import re
 from datetime import datetime
 from pathlib import Path
@@ -12,7 +11,6 @@ from .base import BaseParser
 from workflows.services import get_logger
 
 logger = get_logger()
-
 
 class KuaishouParser(BaseParser):
     """快手短链 / 作品页解析器"""
@@ -192,13 +190,6 @@ class KuaishouParser(BaseParser):
         except Exception:
             pass
         return "图文"
-
-    async def _take_screenshot(self, page: Page, url: str) -> str:
-        url_hash = hashlib.md5(url.encode()).hexdigest()[:8]
-        filepath = Path("screenshots") / f"kuaishou_{url_hash}.png"
-        filepath.parent.mkdir(exist_ok=True)
-        await page.screenshot(path=str(filepath), full_page=False)
-        return str(filepath)
 
     async def _save_html_sample(self, page: Page) -> None:
         filepath = Path("web_data") / "快手.html"

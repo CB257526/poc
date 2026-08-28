@@ -34,6 +34,11 @@ PAYMENT_TEMPLATE_HINT = (
 )
 PAYMENT_FORMULA_LAST_ROW = 9420
 
+# 作品截图：单元格里只缩小显示尺寸，xlsx 里仍嵌入原图像素，避免压糊。
+SCREENSHOT_DISPLAY_HEIGHT_PX = 180
+SCREENSHOT_ROW_HEIGHT_PT = 135
+SCREENSHOT_COLUMN_WIDTH = 28
+
 
 class Node06GeneratePayment(BaseNode):
     """
@@ -400,6 +405,7 @@ class Node06GeneratePayment(BaseNode):
 
         for col_idx, header in enumerate(QUOTE_SHEET_HEADERS, start=1):
             ws.cell(row=1, column=col_idx, value=header)
+        ws.column_dimensions["I"].width = SCREENSHOT_COLUMN_WIDTH
 
         last_data_row = 1
         for row_idx, detail in enumerate(quote_details, start=2):
@@ -478,23 +484,18 @@ class Node06GeneratePayment(BaseNode):
     def _embed_screenshot(self, ws, row_idx: int, screenshot_path: Optional[str]) -> None:
         if screenshot_path and os.path.exists(screenshot_path):
             try:
-                from io import BytesIO
-
                 from openpyxl.drawing.image import Image
                 from PIL import Image as PILImage
 
-                original_img = PILImage.open(screenshot_path)
-                ratio = original_img.size[0] / original_img.size[1] if original_img.size[1] else 1
-                new_height = 100
-                new_width = max(1, int(new_height * ratio))
-                resized_img = original_img.resize((new_width, new_height), PILImage.LANCZOS)
-                img_bytes = BytesIO()
-                resized_img.save(img_bytes, format="PNG")
-                img_bytes.seek(0)
-                img = Image(img_bytes)
+                with PILImage.open(screenshot_path) as original_img:
+                    orig_w, orig_h = original_img.size
+                img = Image(screenshot_path)
+                if orig_h:
+                    img.height = SCREENSHOT_DISPLAY_HEIGHT_PX
+                    img.width = max(1, int(SCREENSHOT_DISPLAY_HEIGHT_PX * orig_w / orig_h))
                 img.anchor = f"I{row_idx}"
                 ws.add_image(img)
-                ws.row_dimensions[row_idx].height = 75
+                ws.row_dimensions[row_idx].height = SCREENSHOT_ROW_HEIGHT_PT
                 return
             except Exception as e:
                 logger.warning("screenshot_embed_failed", path=screenshot_path, error=str(e))

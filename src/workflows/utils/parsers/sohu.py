@@ -8,7 +8,6 @@ from pathlib import Path
 
 from .base import BaseParser
 
-
 class SohuParser(BaseParser):
     """搜狐平台解析器"""
 
@@ -96,17 +95,6 @@ class SohuParser(BaseParser):
                 continue
 
         return "图文"
-
-    async def _take_screenshot(self, page: Page, url: str) -> str:
-        """截图"""
-        import hashlib
-
-        url_hash = hashlib.md5(url.encode()).hexdigest()[:8]
-        filename = f"sohu_{url_hash}.png"
-        filepath = Path("screenshots") / filename
-
-        await page.screenshot(path=str(filepath), full_page=False)
-        return str(filepath)
 
     async def _save_html_sample(self, page: Page):
         """保存HTML样本"""

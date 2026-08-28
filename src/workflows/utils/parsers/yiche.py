@@ -2,7 +2,6 @@
 
 from typing import Dict, Any
 from playwright.async_api import Page
-from pathlib import Path
 from datetime import datetime
 import re
 
@@ -10,7 +9,6 @@ from .base import BaseParser
 from workflows.services import get_logger
 
 logger = get_logger()
-
 
 class YicheParser(BaseParser):
     """易车平台解析器"""
@@ -75,13 +73,3 @@ class YicheParser(BaseParser):
 
         return datetime.now().strftime("%Y-%m-%d")
 
-    async def _take_screenshot(self, page: Page, url: str) -> str:
-        """截图"""
-        import hashlib
-        url_hash = hashlib.md5(url.encode()).hexdigest()[:8]
-        filename = f"yiche_{url_hash}.png"
-        filepath = Path("screenshots") / filename
-        filepath.parent.mkdir(exist_ok=True)
-        
-        await page.screenshot(path=str(filepath), full_page=False)
-        return str(filepath)

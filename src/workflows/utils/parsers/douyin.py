@@ -8,7 +8,6 @@ from pathlib import Path
 
 from .base import BaseParser
 
-
 class DouyinParser(BaseParser):
     """抖音平台解析器"""
 
@@ -83,17 +82,6 @@ class DouyinParser(BaseParser):
             return f"{year}-{month.zfill(2)}-{day.zfill(2)}"
 
         return ""
-
-    async def _take_screenshot(self, page: Page, url: str) -> str:
-        """截图"""
-        import hashlib
-
-        url_hash = hashlib.md5(url.encode()).hexdigest()[:8]
-        filename = f"douyin_{url_hash}.png"
-        filepath = Path("screenshots") / filename
-
-        await page.screenshot(path=str(filepath), full_page=False)
-        return str(filepath)
 
     async def _save_html_sample(self, page: Page):
         """保存HTML样本"""

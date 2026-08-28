@@ -3,14 +3,12 @@
 import re
 from typing import Dict, Any
 from playwright.async_api import Page
-from pathlib import Path
 from datetime import datetime, timedelta, timezone
 
 from .base import BaseParser
 from workflows.services import get_logger
 
 logger = get_logger()
-
 
 class ZhihuParser(BaseParser):
     """知乎平台解析器"""
@@ -137,13 +135,3 @@ class ZhihuParser(BaseParser):
             return "视频"
         return "图文"
 
-    async def _take_screenshot(self, page: Page, url: str) -> str:
-        """截图"""
-        import hashlib
-        url_hash = hashlib.md5(url.encode()).hexdigest()[:8]
-        filename = f"zhihu_{url_hash}.png"
-        filepath = Path("screenshots") / filename
-        filepath.parent.mkdir(exist_ok=True)
-        
-        await page.screenshot(path=str(filepath), full_page=False)
-        return str(filepath)
