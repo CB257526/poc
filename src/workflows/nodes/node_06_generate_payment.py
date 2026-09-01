@@ -417,8 +417,8 @@ class Node06GeneratePayment(BaseNode):
             ws.cell(row=row_idx, column=1, value=detail.get("媒体"))
             ws.cell(row=row_idx, column=2, value=detail.get("媒体等级"))
             ws.cell(row=row_idx, column=3, value=detail.get("粉丝量"))
-            # 发布形式仍由业务人员下载后手动填写。
-            ws.cell(row=row_idx, column=4, value=None)
+            # 样表「约稿」sheet：发布形式=原创/通稿，约稿类型=视频/图文
+            ws.cell(row=row_idx, column=4, value=detail.get("发布形式"))
             ws.cell(row=row_idx, column=5, value=detail.get("文章类型"))
             ws.cell(row=row_idx, column=6, value=detail.get("平台"))
             ws.cell(row=row_idx, column=7, value=detail.get("标题"))
@@ -445,38 +445,72 @@ class Node06GeneratePayment(BaseNode):
         for col_idx, header in enumerate(FEE_SUMMARY_HEADERS, start=1):
             ws_sum.cell(row=1, column=col_idx, value=header)
 
-        for row_idx, detail in enumerate(quote_details, start=2):
+        # 按收款方（户名）分组汇总：同一收款方的多条约稿合并成一行，
+        # 约稿数量=条数，基础金额/奖励金额/合计费用=求和。
+        # 旧实现只合并「连续行」的同一收款方，导致同名媒体分散时（如
+        # 同一媒体出现在两个主题下）有的合并、有的没合并。
+        groups: "dict[str, dict]" = {}
+        for detail in quote_details:
+            payee = str(detail.get("收款方") or "")
+            if not payee:
+                continue
+            if payee not in groups:
+                groups[payee] = {
+                    "detail": detail,
+                    "count": 0,
+                    "base": 0.0,
+                    "reward": 0.0,
+                    "total": 0.0,
+                }
+            g = groups[payee]
             base_amount = detail.get("基础金额")
             if base_amount is None:
                 base_amount = detail.get("费用")
             reward = detail.get("奖励金额") or 0
             try:
-                total_fee = float(base_amount or 0) + float(reward or 0)
+                base_f = float(base_amount or 0)
             except (TypeError, ValueError):
-                total_fee = base_amount
+                base_f = 0.0
+            try:
+                reward_f = float(reward or 0)
+            except (TypeError, ValueError):
+                reward_f = 0.0
+            g["count"] += 1
+            g["base"] += base_f
+            g["reward"] += reward_f
+            g["total"] += base_f + reward_f
 
+        for row_idx, (payee, g) in enumerate(groups.items(), start=2):
+            d = g["detail"]
             # 约稿费用合计中这两列与「约稿」表对调：发布形式=视频/图文，约稿类型=原创/通稿
-            ws_sum.cell(row=row_idx, column=1, value=detail.get("媒体"))
-            ws_sum.cell(row=row_idx, column=2, value=detail.get("媒体等级"))
-            ws_sum.cell(row=row_idx, column=3, value=detail.get("文章类型"))
-            ws_sum.cell(row=row_idx, column=4, value=None)
-            ws_sum.cell(row=row_idx, column=5, value=1)
-            ws_sum.cell(row=row_idx, column=6, value=detail.get("收款方"))
-            ws_sum.cell(row=row_idx, column=7, value=detail.get("身份证"))
-            ws_sum.cell(row=row_idx, column=8, value=detail.get("账号"))
-            ws_sum.cell(row=row_idx, column=9, value=detail.get("联系方式"))
-            ws_sum.cell(row=row_idx, column=10, value=detail.get("开户行"))
-            ws_sum.cell(row=row_idx, column=11, value=detail.get("开户行所在城市"))
-            ws_sum.cell(row=row_idx, column=12, value=base_amount)
-            ws_sum.cell(row=row_idx, column=13, value=detail.get("奖励金额"))
-            ws_sum.cell(row=row_idx, column=14, value=total_fee)
+            ws_sum.cell(row=row_idx, column=1, value=d.get("媒体"))
+            ws_sum.cell(row=row_idx, column=2, value=d.get("媒体等级"))
+            ws_sum.cell(row=row_idx, column=3, value=d.get("文章类型"))
+            ws_sum.cell(row=row_idx, column=4, value=d.get("发布形式"))
+            ws_sum.cell(row=row_idx, column=5, value=g["count"])
+            ws_sum.cell(row=row_idx, column=6, value=payee)
+            ws_sum.cell(row=row_idx, column=7, value=d.get("身份证"))
+            ws_sum.cell(row=row_idx, column=8, value=d.get("账号"))
+            ws_sum.cell(row=row_idx, column=9, value=d.get("联系方式"))
+            ws_sum.cell(row=row_idx, column=10, value=d.get("开户行"))
+            ws_sum.cell(row=row_idx, column=11, value=d.get("开户行所在城市"))
+            ws_sum.cell(row=row_idx, column=12, value=g["base"])
+            ws_sum.cell(row=row_idx, column=13, value=g["reward"])
+            ws_sum.cell(row=row_idx, column=14, value=g["total"])
 
-        self._merge_payee_totals(ws_sum, quote_details)
-
-        if last_data_row >= 2:
-            ws_sum.cell(row=footer_row, column=11, value="合计")
-            ws_sum.cell(row=footer_row, column=12, value=f"=SUM(L2:L{last_data_row})")
-            ws_sum.cell(row=footer_row, column=14, value=f"=SUM(N2:N{last_data_row})")
+        summary_last_row = 1 + len(groups)
+        if summary_last_row >= 2:
+            ws_sum.cell(row=summary_last_row + 1, column=11, value="合计")
+            ws_sum.cell(
+                row=summary_last_row + 1,
+                column=12,
+                value=f"=SUM(L2:L{summary_last_row})",
+            )
+            ws_sum.cell(
+                row=summary_last_row + 1,
+                column=14,
+                value=f"=SUM(N2:N{summary_last_row})",
+            )
 
         wb.save(output_path)
         return output_path
@@ -502,45 +536,3 @@ class Node06GeneratePayment(BaseNode):
                 ws.cell(row=row_idx, column=9, value=screenshot_path)
                 return
         ws.cell(row=row_idx, column=9, value="")
-
-    @staticmethod
-    def _merge_payee_totals(ws, quote_details: List[Dict[str, Any]]) -> None:
-        """同一户名连续行合并「合计费用」，金额写在合并区第一格。"""
-        if not quote_details:
-            return
-
-        def payee_of(detail: Dict[str, Any]) -> str:
-            return str(detail.get("收款方") or "")
-
-        def amount_of(detail: Dict[str, Any]) -> float:
-            base = detail.get("基础金额")
-            if base is None:
-                base = detail.get("费用") or 0
-            reward = detail.get("奖励金额") or 0
-            try:
-                return float(base or 0) + float(reward or 0)
-            except (TypeError, ValueError):
-                return 0.0
-
-        start = 0
-        while start < len(quote_details):
-            end = start
-            current = payee_of(quote_details[start])
-            total = amount_of(quote_details[start])
-            while end + 1 < len(quote_details) and payee_of(quote_details[end + 1]) == current and current:
-                end += 1
-                total += amount_of(quote_details[end])
-
-            first_excel_row = start + 2
-            last_excel_row = end + 2
-            ws.cell(row=first_excel_row, column=14, value=total)
-            for row_idx in range(first_excel_row + 1, last_excel_row + 1):
-                ws.cell(row=row_idx, column=14, value=None)
-            if last_excel_row > first_excel_row:
-                ws.merge_cells(
-                    start_row=first_excel_row,
-                    start_column=14,
-                    end_row=last_excel_row,
-                    end_column=14,
-                )
-            start = end + 1

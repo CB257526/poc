@@ -121,8 +121,8 @@ class Node05CalculateFee(BaseNode):
                         "媒体等级": media_level,
                         "粉丝量": record.get("粉丝量"),
                         "文章类型": article_type,
-                        # 发布形式仍由业务人员下载后手动填写。
-                        "发布形式": None,
+                        # 发布形式 = 原创/通稿（node_02 按同标题归组判定）
+                        "发布形式": record.get("发布形式"),
                         "费用": fee,
                         "基础金额": fee,
                         "奖励金额": record.get("奖励金额") or None,
