@@ -134,6 +134,13 @@ def preview_validate(input_path: str, corrections: dict[str, str] | None = None)
                 }
             )
 
+    # 预检问题也带上原表行号，便于用户直接定位
+    row_by_record = {item["record_id"]: item["row_number"] for item in records}
+    media_by_record = {item["record_id"]: item["media_name"] for item in records}
+    for issue in issues:
+        issue["row_number"] = row_by_record.get(issue.get("record_id"))
+        issue["media_name"] = media_by_record.get(issue.get("record_id"))
+
     status = "ready" if not issues else "needs_correction"
     return {
         "status": status,
@@ -144,18 +151,37 @@ def preview_validate(input_path: str, corrections: dict[str, str] | None = None)
 
 
 def workflow_issues(context) -> list[dict]:
+    # 把 rec_xxxx 还原成对用户有意义的原表行号 + 媒体名，便于定位到具体哪一行
+    by_record: dict[str, dict] = {}
+    for r in context.records or []:
+        rid = r.get("id")
+        if rid:
+            by_record[str(rid)] = {
+                "row_number": r.get("row_number"),
+                "media_name": r.get("媒体"),
+            }
     items = []
     for issue in context.issues:
         severity = issue.level if issue.level in {"warning", "error", "critical"} else "error"
-        items.append(
-            {
-                "record_id": issue.record_id,
-                "node_id": issue.node_id,
-                "code": issue.code,
-                "message": issue.message,
-                "severity": severity,
-            }
-        )
+        item = {
+            "record_id": issue.record_id,
+            "node_id": issue.node_id,
+            "code": issue.code,
+            "message": issue.message,
+            "severity": severity,
+        }
+        rec = by_record.get(str(issue.record_id)) if issue.record_id else None
+        if rec:
+            if rec.get("row_number") is not None:
+                item["row_number"] = rec["row_number"]
+            if rec.get("media_name"):
+                item["media_name"] = rec["media_name"]
+        # 节点 details 里直接带 row_number 的（如预检），兜底保留
+        if item.get("row_number") is None and (issue.details or {}).get("row_number") is not None:
+            item["row_number"] = issue.details["row_number"]
+        if item.get("media_name") is None and (issue.details or {}).get("media_name"):
+            item["media_name"] = issue.details["media_name"]
+        items.append(item)
     return items
 
 

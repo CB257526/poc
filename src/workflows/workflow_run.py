@@ -94,6 +94,14 @@ def run_workflow(
         run_status="running",
     )
 
+    # 把 run_id 绑定到当前协程/线程的日志上下文，节点内所有结构化日志自动带上 run_id
+    try:
+        import structlog.contextvars
+    except ImportError:
+        structlog.contextvars = None
+    if structlog.contextvars is not None:
+        structlog.contextvars.bind_contextvars(run_id=run_id)
+
     logger.info(
         "workflow_started",
         run_id=run_id,

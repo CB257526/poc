@@ -333,6 +333,42 @@ def test_read_link_sheet_keeps_links_after_blank_rows(tmp_path):
     ]
 
 
+def test_read_link_sheet_media_name_row_without_link(tmp_path):
+    """主链接被删后，媒体名还在 A 列、B 列为空，不能当成新主题。"""
+    from openpyxl import Workbook
+    from workflows.services.excel import ExcelService
+
+    path = tmp_path / "1-链接.xlsx"
+    wb = Workbook()
+    ws = wb.active
+    ws["A1"] = "主题1"
+    ws["A2"] = "Alex Cui"
+    ws["B2"] = "https://weixin.qq.com/sph/abc"
+    ws["B3"] = "微博：https://weibo.com/1"
+    ws["A4"] = "Johnny Durn"
+    ws["B5"] = "https://weibo.com/ttarticle/p/show?id=1"
+    ws["B6"] = "https://www.toutiao.com/article/1"
+    ws["A7"] = "主题2"
+    ws["A8"] = "景行"
+    ws["B9"] = "微博https://weibo.com/2"
+    wb.save(path)
+    wb.close()
+
+    records = ExcelService.read_link_sheet(str(path))
+    by_media = {(row["主题"], row["媒体"]): row for row in records}
+    assert set(by_media) == {
+        ("主题1", "Alex Cui"),
+        ("主题1", "Johnny Durn"),
+        ("主题2", "景行"),
+    }
+    assert by_media[("主题1", "Johnny Durn")]["链接"] == [
+        "https://weibo.com/ttarticle/p/show?id=1",
+        "https://www.toutiao.com/article/1",
+    ]
+    assert by_media[("主题2", "景行")]["链接"] == ["微博https://weibo.com/2"]
+    assert "Johnny Durn" not in {row["主题"] for row in records}
+
+
 def test_url_spec_rejects_www_typo_and_fullwidth_dot():
     from workflows.utils.url_spec import inspect_link_text, validate_url
 

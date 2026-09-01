@@ -26,56 +26,63 @@ def setup_logging(
     # 创建日志目录
     Path(logs_dir).mkdir(parents=True, exist_ok=True)
 
-    # 配置处理器
-    processors = [
+    log_level = getattr(logging, level.upper(), logging.INFO)
+
+    # 预处理链（structlog 与 stdlib 外来记录共用）
+    shared_processors = [
         structlog.contextvars.merge_contextvars,
-        structlog.processors.add_log_level,
+        structlog.stdlib.add_log_level,
         structlog.processors.TimeStamper(fmt="iso"),
         structlog.processors.StackInfoRenderer(),
         structlog.processors.format_exc_info,
     ]
 
-    # 根据格式类型选择渲染器
-    if format_type == "json":
-        processors.append(structlog.processors.JSONRenderer())
-    else:
-        processors.append(structlog.dev.ConsoleRenderer())
-
-    # 配置structlog
-    structlog.configure(
-        processors=processors,
-        wrapper_class=structlog.make_filtering_bound_logger(
-            logging.getLevelName(level)
-        ),
-        context_class=dict,
-        logger_factory=structlog.PrintLoggerFactory(),
-        cache_logger_on_first_use=True,
+    renderer = (
+        structlog.processors.JSONRenderer()
+        if format_type == "json"
+        else structlog.dev.ConsoleRenderer()
     )
 
-    # 配置标准logging
-    log_level = getattr(logging, level.upper())
-
-    # 创建日志文件名（包含日期）
-    log_file = Path(logs_dir) / f"workflow_{datetime.now().strftime('%Y%m%d')}.log"
-
-    # 根据输出目标配置处理器
+    # 配置标准 logging 根 logger：console + file 双输出
+    root = logging.getLogger()
+    root.setLevel(log_level)
+    root.handlers.clear()
     handlers = []
 
-    if output in ["console", "both"]:
+    if output in ("console", "both"):
         console_handler = logging.StreamHandler(sys.stdout)
         console_handler.setLevel(log_level)
         handlers.append(console_handler)
 
-    if output in ["file", "both"]:
-        file_handler = logging.FileHandler(log_file, encoding='utf-8')
+    if output in ("file", "both"):
+        log_file = Path(logs_dir) / f"workflow_{datetime.now().strftime('%Y%m%d')}.log"
+        file_handler = logging.FileHandler(log_file, encoding="utf-8")
         file_handler.setLevel(log_level)
         handlers.append(file_handler)
 
-    # 配置根logger
-    logging.basicConfig(
-        level=log_level,
-        handlers=handlers,
-        format="%(message)s"  # structlog会处理格式
+    for handler in handlers:
+        root.addHandler(handler)
+
+    # 所有输出（含 uvicorn 等 stdlib 日志）统一走 ProcessorFormatter
+    formatter = structlog.stdlib.ProcessorFormatter(
+        processors=[
+            structlog.stdlib.ProcessorFormatter.remove_processors_meta,
+            renderer,
+        ],
+        foreign_pre_chain=shared_processors,
+    )
+    for handler in handlers:
+        handler.setFormatter(formatter)
+
+    # 配置 structlog → stdlib
+    structlog.configure(
+        processors=[
+            *shared_processors,
+            structlog.stdlib.ProcessorFormatter.wrap_for_formatter,
+        ],
+        wrapper_class=structlog.stdlib.BoundLogger,
+        logger_factory=structlog.stdlib.LoggerFactory(),
+        cache_logger_on_first_use=True,
     )
 
 

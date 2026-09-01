@@ -28,6 +28,9 @@ def _session() -> Session:
 
 def execute_workflow(task_id: str) -> None:
     ensure_db()
+    import structlog.contextvars
+
+    structlog.contextvars.bind_contextvars(task_id=task_id)
     db = _session()
     try:
         task = db.query(Task).filter(Task.id == task_id).first()
@@ -119,12 +122,21 @@ def execute_workflow(task_id: str) -> None:
                     "code": "WORKFLOW_CRASH",
                     "message": str(exc),
                     "severity": "critical",
+                    "details": {
+                        "error_type": type(exc).__name__,
+                    },
                 }
             )
             task.issues_json = dumps(issues)
             db.commit()
     finally:
         db.close()
+        try:
+            import structlog.contextvars
+
+            structlog.contextvars.clear_contextvars()
+        except Exception:
+            pass
 
 
 def _sync_exceptions(db: Session, task: Task, quote_path: str) -> None:

@@ -19,6 +19,7 @@ services:
       - ./runtime:/app/runtime
       - ./output:/app/output
       - ./screenshots:/app/screenshots
+      - ./logs:/app/logs
     environment:
       - PYTHONPATH=src
       - WEB_SCRAPER_CONCURRENCY=2

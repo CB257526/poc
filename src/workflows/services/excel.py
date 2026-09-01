@@ -20,6 +20,11 @@ class ExcelService:
         return text if text else None
 
     @staticmethod
+    def _is_topic_label(value: str) -> bool:
+        """A 列「主题1 / 主题 2」这类分区标题，不是媒体名。"""
+        return value.replace(" ", "").replace("　", "").startswith("主题")
+
+    @staticmethod
     def read_link_sheet(
         file_path: str,
         sheet_name: Optional[str] = None,
@@ -29,8 +34,9 @@ class ExcelService:
 
         结构约定（该表无表头，共两列）：
         - A列是分层标签，B列是对应链接列表（一对多）
-        - A列非空且B列为空：主题行（如 "主题1"），后续链接归属于该主题
-        - A列非空且B列非空：媒体（作者）块起点，A列通常为合并单元格、仅左上角有值
+        - A列以「主题」开头且B列为空：主题行（如 "主题1"），后续媒体归属于该主题
+        - A列非空且不是主题行：媒体（作者）块起点。B列可以有链接，也可以为空
+          （主链接被删掉后，媒体名仍在 A 列、B 列变空，不能当成新主题）
         - B列非空：该媒体名下的一条链接（一行一条）
         - 全空行：仅跳过。同一媒体的链接之间经常会空一行，空行不能结束媒体块；
           媒体块只在遇到下一个媒体名、主题行或表尾时结束
@@ -64,23 +70,36 @@ class ExcelService:
                 media_start_row = None
                 media_links = []
 
+            def start_media(name: str, row_idx: int) -> None:
+                nonlocal current_media, media_start_row, media_links
+                flush_media()
+                current_media = name
+                media_start_row = row_idx
+                media_links = []
+
             for row_idx, row in enumerate(ws.iter_rows(values_only=True), start=1):
                 topic_val = ExcelService._clean_cell(row[0] if len(row) >= 1 else None)
                 link_val = ExcelService._clean_cell(row[1] if len(row) >= 2 else None)
 
                 if not link_val:
                     if topic_val:
-                        # 主题行：结束当前媒体块并切换主题
-                        flush_media()
-                        current_topic = topic_val
+                        if ExcelService._is_topic_label(topic_val):
+                            # 主题行：结束当前媒体块并切换主题
+                            flush_media()
+                            current_topic = topic_val
+                        else:
+                            # 媒体名还在、第一格链接被删空：开启新媒体块，后续 B 列仍归它
+                            start_media(topic_val, row_idx)
                     # 全空行：跳过，保留当前媒体，后续链接仍归该媒体
                     continue
 
                 # B列有链接：若本行A列非空，则是新媒体（作者）块起点
                 if topic_val:
-                    flush_media()
-                    current_media = topic_val
-                    media_start_row = row_idx
+                    if ExcelService._is_topic_label(topic_val):
+                        flush_media()
+                        current_topic = topic_val
+                    else:
+                        start_media(topic_val, row_idx)
 
                 if not current_media:
                     # 主题行之前的孤儿链接，跳过并告警

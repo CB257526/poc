@@ -57,7 +57,11 @@ export function IssueList({ issues, title = "处理问题" }: { issues: TaskIssu
                 <td>{issue.node_id ? (NODE_ID_LABEL[issue.node_id] ?? issue.node_id) : "—"}</td>
                 <td>{issue.code}</td>
                 <td>{issue.message}</td>
-                <td>{issue.record_id || "—"}</td>
+                <td>
+                  {issue.row_number
+                    ? `第 ${issue.row_number} 行${issue.media_name ? ` · ${issue.media_name}` : ""}`
+                    : issue.record_id || "—"}
+                </td>
               </tr>
             ))}
           </tbody>

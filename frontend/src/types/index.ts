@@ -59,6 +59,8 @@ export interface TaskIssue {
   code: string;
   message: string;
   severity: "warning" | "error" | "critical";
+  row_number?: number;
+  media_name?: string;
 }
 
 export interface ValidateTaskResponse {
