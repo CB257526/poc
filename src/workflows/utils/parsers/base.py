@@ -1,5 +1,6 @@
 """平台解析器基类"""
 
+import asyncio
 from abc import ABC, abstractmethod
 from hashlib import md5
 from pathlib import Path
@@ -41,9 +42,19 @@ class BaseParser(ABC):
             await page.wait_for_load_state("domcontentloaded", timeout=5000)
 
     async def _take_screenshot(self, page: Page, url: str) -> str:
-        """截当前视口。像素密度由浏览器 context 的 device_scale_factor 决定。"""
+        """截当前视口。像素密度由浏览器 context 的 device_scale_factor 决定。
+
+        知乎等页面字体请求可能一直不完，截图会等字体加载而卡住整条爬取。
+        这里加 8s 超时，失败只返回空路径、不抛异常，让标题/日期仍能落库。
+        """
         url_hash = md5(url.encode()).hexdigest()[:8]
         filepath = Path("screenshots") / f"{self.platform_name}_{url_hash}.png"
         filepath.parent.mkdir(parents=True, exist_ok=True)
-        await page.screenshot(path=str(filepath), full_page=False, type="png")
+        try:
+            await asyncio.wait_for(
+                page.screenshot(path=str(filepath), full_page=False, type="png"),
+                timeout=8,
+            )
+        except Exception:
+            return ""
         return str(filepath)

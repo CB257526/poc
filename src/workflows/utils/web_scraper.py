@@ -3,6 +3,7 @@
 import asyncio
 import os
 from typing import Any, Dict, List, Mapping, Optional, Sequence
+from urllib.parse import quote
 
 from playwright.async_api import async_playwright, Browser, BrowserContext, Page
 
@@ -73,6 +74,11 @@ _MISSING_PAGE_MARKERS = (
     "page not found",
     "sorry, the page you visited does not exist",
 )
+
+# 知乎对云服务器 IP 段反爬极严：www.zhihu.com / api.zhihu.com 直连会 403。
+# 但 link.zhihu.com 短链中转页不设防，会种下 _xsrf/BEC cookie 再 JS 跳到目标，
+# 从同一 context 跟过去就能拿到正文。本地（住宅 IP）可绕过，服务器必须走这条。
+_ZHIHU_LINK_BASE = "https://link.zhihu.com/?target="
 
 
 def _env_flag(name: str, env: Optional[Mapping[str, str]] = None) -> bool:
@@ -450,6 +456,9 @@ async def scrape_publications(records: List[Dict[str, Any]]) -> List[Dict[str, A
                 # 正常页还要解析 + 截图，不能压得太短；坏链靠 HTTP/网络错误立刻停，不靠这个。
                 record_timeout_s = _env_int("WEB_SCRAPER_RECORD_TIMEOUT", 45)
                 semaphore = asyncio.Semaphore(max(1, concurrency))
+                # 知乎经 link 中转对同 IP 并发敏感：多路并发中转会被风控拖慢（实测并发2全超时、
+                # 串行全成功）。知乎强制并发 1，其它平台用上面那个。
+                zhihu_semaphore = asyncio.Semaphore(1)
 
                 async def fetch_and_parse(record, url: str, platform: str) -> None:
                     page = await context.new_page()
@@ -457,11 +466,39 @@ async def scrape_publications(records: List[Dict[str, Any]]) -> List[Dict[str, A
                     try:
                         await asyncio.sleep(random.uniform(0.2, 0.6))
                         try:
-                            response = await page.goto(
-                                url,
-                                wait_until="domcontentloaded",
-                                timeout=nav_timeout_ms,
-                            )
+                            if platform == "知乎":
+                                # 云服务器 IP 直连 www.zhihu.com 会 403；先经 link.zhihu.com 中转，
+                                # 让知乎种下 cookie，再等 JS 跳到真实地址。本地（住宅 IP）同样适用。
+                                # 中转页不稳定（实测 2-15s 波动），goto 超时放宽到 30s，失败重试一次。
+                                zhihu_timeout = max(nav_timeout_ms, 30000)
+                                for attempt in range(2):
+                                    try:
+                                        await page.goto(
+                                            _ZHIHU_LINK_BASE + quote(url, safe=""),
+                                            wait_until="domcontentloaded",
+                                            timeout=zhihu_timeout,
+                                        )
+                                        break
+                                    except Exception:
+                                        if attempt == 1:
+                                            raise
+                                        await asyncio.sleep(1)
+                                # 中转页跳到目标后还会再导航几次；等标题非空再往下走，
+                                # 不要用 networkidle（知乎会持续请求导致永不 idle）。上限 15s。
+                                for _ in range(30):
+                                    try:
+                                        if (await page.title()).strip():
+                                            break
+                                    except Exception:
+                                        pass
+                                    await asyncio.sleep(0.5)
+                                response = None
+                            else:
+                                response = await page.goto(
+                                    url,
+                                    wait_until="domcontentloaded",
+                                    timeout=nav_timeout_ms,
+                                )
                         except Exception as e:
                             reason = classify_scrape_failure(None, page.url, str(e))
                             record["scrape_error"] = reason or str(e)
@@ -526,7 +563,8 @@ async def scrape_publications(records: List[Dict[str, Any]]) -> List[Dict[str, A
                         await page.close()
 
                 async def scrape_one_record(record):
-                    async with semaphore:
+                    lock = zhihu_semaphore if record.get("primary_platform") == "知乎" else semaphore
+                    async with lock:
                         url = record.get("primary_link")
                         platform = record.get("primary_platform", "unknown")
                         if not url:
@@ -534,14 +572,21 @@ async def scrape_publications(records: List[Dict[str, Any]]) -> List[Dict[str, A
 
                         logger.info("scraping_page", url=url, platform=platform)
 
+                        # 知乎链路长：中转(最多30s) + 标题轮询 + networkidle(10s) + 截图，
+                        # 单条上限单独放宽到 90s，其它平台维持 record_timeout_s。
+                        budget = (
+                            max(5, record_timeout_s, 90)
+                            if platform == "知乎"
+                            else max(5, record_timeout_s)
+                        )
                         try:
                             await asyncio.wait_for(
                                 fetch_and_parse(record, url, platform),
-                                timeout=max(5, record_timeout_s),
+                                timeout=budget,
                             )
                         except asyncio.TimeoutError:
                             record["scrape_error"] = (
-                                f"页面加载超时（{max(5, record_timeout_s)}s）"
+                                f"页面加载超时（{budget}s）"
                             )
                             logger.error(
                                 "scraping_failed",

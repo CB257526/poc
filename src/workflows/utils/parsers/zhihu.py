@@ -41,20 +41,25 @@ class ZhihuParser(BaseParser):
 
     async def _extract_title(self, page: Page) -> str:
         """提取标题"""
-        # 尝试多个选择器
+        # 中转跳转后页面 <title> 一定非空且带「 - 知乎」后缀，最可靠，优先取它。
+        try:
+            doc_title = await page.title()
+        except Exception:
+            doc_title = ""
+        doc_title = doc_title.replace(" - 知乎", "").strip()
+        if doc_title:
+            return doc_title
+
+        # 再尝试具体选择器
         selectors = [
             "h1.QuestionHeader-title",
             "h1.ZVideo-title",
             "h1",
-            "title"
         ]
 
         for selector in selectors:
             text = await self._safe_text(page, selector)
             if text:
-                # 清理title标签的后缀
-                if selector == "title":
-                    text = text.replace(" - 知乎", "").strip()
                 return text
 
         return ""
