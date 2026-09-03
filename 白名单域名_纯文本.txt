@@ -72,3 +72,14 @@ m.gifshow.com
 chenzhongtech.com
 v.m.chenzhongtech.com
 m.chenzhongtech.com
+# ---- 快手资源 CDN（封面图/头像，域名随内容变化）----
+yximgs.com
+wskwai.com
+wsukwai.com
+wsbkwai.com
+kwaicdn.com
+kwimgs.com
+p2.a.yximgs.com
+p4-pro.a.yximgs.com
+p23-plat.wskwai.com
+p4-plat.wsbkwai.com
