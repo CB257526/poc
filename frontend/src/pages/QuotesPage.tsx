@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { api } from "../api";
 import { errorMessage, formatDateTime, yuan } from "../api/client";
 import { Hero, IssueList, StatusPill } from "../components/ui";
-import type { QuoteDetail, Task, TaskStatus } from "../types";
+import type { QuoteDetail, Task, TaskIssue, TaskStatus } from "../types";
 import { TASK_STATUS_LABEL } from "../types";
 
 function detailsOf(task: Task | null): QuoteDetail[] {
@@ -32,6 +32,11 @@ export function QuotesPage() {
   const [platform, setPlatform] = useState("全部");
   const [state, setState] = useState("全部");
   const [loaded, setLoaded] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [correctionMessage, setCorrectionMessage] = useState("");
+  const [publicationCorrections, setPublicationCorrections] = useState<
+    Record<string, { title: string; article_type: string }>
+  >({});
 
   useEffect(() => {
     api.listTasks()
@@ -65,10 +70,68 @@ export function QuotesPage() {
     setState("全部");
   }, [taskId]);
 
+  useEffect(() => {
+    if (!task || task.status !== "running") return;
+    const timer = window.setInterval(() => {
+      void api.getTask(task.task_id)
+        .then((updated) => setTasks((items) => items.map((item) => (
+          item.task_id === updated.task_id ? updated : item
+        ))))
+        .catch((err: unknown) => setError(errorMessage(err, "刷新处理状态失败")));
+    }, 1500);
+    return () => window.clearInterval(timer);
+  }, [task]);
+
   if (!loaded && !error) return <p>加载中…</p>;
 
   const completed = task?.status === "completed";
   const issues = task?.issues ?? [];
+  const editableRecords = Array.from(new Map(
+    issues
+      .filter((issue) => ["SCRAPE_FAILED", "MISSING_TITLE", "MISSING_ARTICLE_TYPE"].includes(issue.code) && issue.record_id)
+      .map((issue) => [issue.record_id as string, issue]),
+  ).values());
+
+  function updatePublicationCorrection(
+    issue: TaskIssue,
+    field: "title" | "article_type",
+    value: string,
+  ) {
+    if (!issue.record_id) return;
+    setPublicationCorrections((current) => ({
+      ...current,
+      [issue.record_id as string]: {
+        title: current[issue.record_id as string]?.title ?? "",
+        article_type: current[issue.record_id as string]?.article_type ?? "",
+        [field]: value,
+      },
+    }));
+  }
+
+  async function savePublicationCorrections() {
+    if (!task) return;
+    const payload = Object.fromEntries(editableRecords.map((issue) => [
+      issue.record_id as string,
+      publicationCorrections[issue.record_id as string] ?? { title: "", article_type: "" },
+    ]));
+    if (Object.values(payload).some((item) => !item.title.trim() || !item.article_type)) {
+      setError("请为每条待补充记录同时填写作品标题和作品类型。");
+      return;
+    }
+    setSaving(true);
+    setError("");
+    setCorrectionMessage("");
+    try {
+      await api.submitPublicationCorrections(task.task_id, payload);
+      const updated = await api.getTask(task.task_id);
+      setTasks((items) => items.map((item) => item.task_id === updated.task_id ? updated : item));
+      setCorrectionMessage("补充内容已保存，系统正在重新校验并生成结果。");
+    } catch (err) {
+      setError(errorMessage(err, "保存补充内容失败"));
+    } finally {
+      setSaving(false);
+    }
+  }
 
   return (
     <>
@@ -109,7 +172,7 @@ export function QuotesPage() {
       )}
 
       {task?.status === "failed" ? (
-        <div className="alert error">该次处理失败：{task.error || "请查看下方问题列表"}</div>
+        <div className="alert error">该次处理未完成，请根据下方提示修正数据后重新处理。</div>
       ) : task && completed && details.length ? (
         <div className="alert success">正在展示该次处理的可入账约稿明细。</div>
       ) : task && completed ? (
@@ -121,6 +184,58 @@ export function QuotesPage() {
       ) : null}
 
       <IssueList issues={issues} title="该次处理问题" />
+
+      {task && editableRecords.length > 0 && task.status !== "running" ? (
+        <div className="panel">
+          <h2>在线补充作品信息</h2>
+          <p style={{ color: "var(--muted)" }}>
+            对于网页未能自动读取的记录，请填写作品标题并确认作品类型。保存后系统会重新校验和计算费用。
+          </p>
+          <div className="table-wrap">
+            <table className="data">
+              <thead>
+                <tr>
+                  <th>涉及数据</th>
+                  <th>作品标题（必填）</th>
+                  <th>作品类型（必填）</th>
+                </tr>
+              </thead>
+              <tbody>
+                {editableRecords.map((issue) => (
+                  <tr key={issue.record_id}>
+                    <td>
+                      {issue.row_number ? `Excel 第 ${issue.row_number} 行` : "本次记录"}
+                      {issue.media_name ? ` · ${issue.media_name}` : ""}
+                    </td>
+                    <td>
+                      <input
+                        type="text"
+                        value={publicationCorrections[issue.record_id as string]?.title ?? ""}
+                        onChange={(event) => updatePublicationCorrection(issue, "title", event.target.value)}
+                        placeholder="请输入作品标题"
+                      />
+                    </td>
+                    <td>
+                      <select
+                        value={publicationCorrections[issue.record_id as string]?.article_type ?? ""}
+                        onChange={(event) => updatePublicationCorrection(issue, "article_type", event.target.value)}
+                      >
+                        <option value="">请选择</option>
+                        <option value="图文">图文</option>
+                        <option value="视频">视频</option>
+                      </select>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <button className="btn primary" disabled={saving} onClick={() => void savePublicationCorrections()}>
+            {saving ? "保存中…" : "保存并重新校验"}
+          </button>
+        </div>
+      ) : null}
+      {correctionMessage ? <div className="alert info">{correctionMessage}</div> : null}
 
       {details.length ? (
         <>

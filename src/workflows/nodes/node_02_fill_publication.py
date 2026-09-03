@@ -52,20 +52,24 @@ class Node02FillPublication(BaseNode):
             # 检查爬取结果并记录问题，同时将爬取结果映射到标准字段
             for record in records_with_scraped:
                 record_id = record.get("id", "unknown")
+                correction = (context.config.get("publication_corrections") or {}).get(str(record_id), {})
+                corrected_title = str(correction.get("title") or "").strip()
+                corrected_type = str(correction.get("article_type") or "").strip()
 
                 if record.get("scrape_error"):
-                    issues.append(Issue(
-                        level="error",
-                        code="SCRAPE_FAILED",
-                        message=f"爬取失败: {record['scrape_error']}",
-                        node_id=self.node_id,
-                        record_id=record_id
-                    ))
-                    metrics.error_count += 1
-                    continue
+                    if not (corrected_title and corrected_type):
+                        issues.append(Issue(
+                            level="error",
+                            code="SCRAPE_FAILED",
+                            message=f"爬取失败: {record['scrape_error']}",
+                            node_id=self.node_id,
+                            record_id=record_id
+                        ))
+                        metrics.error_count += 1
+                        continue
 
                 # 验证必填字段
-                if not record.get("scraped_title"):
+                if not (corrected_title or record.get("scraped_title")):
                     issues.append(Issue(
                         level="warning",
                         code="MISSING_TITLE",
@@ -75,9 +79,9 @@ class Node02FillPublication(BaseNode):
                     ))
 
                 # 将爬取结果映射到标准字段，供后续节点使用
-                record["标题"] = record.get("scraped_title")
+                record["标题"] = corrected_title or record.get("scraped_title")
                 record["发布日期"] = record.get("scraped_publish_date")
-                record["文章类型"] = record.get("scraped_article_type")
+                record["文章类型"] = corrected_type or record.get("scraped_article_type")
                 record["截图"] = record.get("scraped_screenshot")
                 record["平台"] = record.get("primary_platform")
 

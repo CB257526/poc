@@ -37,6 +37,15 @@ class CorrectionsBody(BaseModel):
     media_name_corrections: dict[str, str]
 
 
+class PublicationCorrection(BaseModel):
+    title: str = ""
+    article_type: str = ""
+
+
+class PublicationCorrectionsBody(BaseModel):
+    corrections: dict[str, PublicationCorrection]
+
+
 def _uploads_dir() -> Path:
     path = runtime_dir() / "uploads"
     path.mkdir(parents=True, exist_ok=True)
@@ -129,10 +138,15 @@ def submit_corrections(
         cleaned[str(key)] = name
 
     existing = loads(task.corrections_json, {})
-    existing.update(cleaned)
+    if "media_name" in existing or "publication" in existing:
+        existing.setdefault("media_name", {}).update(cleaned)
+        media_corrections = existing["media_name"]
+    else:
+        existing.update(cleaned)
+        media_corrections = existing
     task.corrections_json = dumps(existing)
     try:
-        preview = preview_validate(task.input_file_path, existing)
+        preview = preview_validate(task.input_file_path, media_corrections)
     except Exception as exc:
         raise ApiError(str(exc), code="UNPROCESSABLE", status_code=422) from exc
     apply_preview(task, preview)
@@ -152,6 +166,55 @@ def run_task(
     if task.status != "ready":
         raise ApiError("当前任务状态不允许启动", code="TASK_CONFLICT", status_code=409)
     task.status = "running"
+    touch(task)
+    db.commit()
+    background_tasks.add_task(execute_workflow, task_id)
+    return {"task_id": task.id, "status": "running"}
+
+
+@router.post("/{task_id}/publication-corrections", status_code=202)
+def submit_publication_corrections(
+    task_id: str,
+    body: PublicationCorrectionsBody,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_role("admin", "operator")),
+):
+    """保存人工补录的作品信息，并从头重新执行该任务。"""
+    task = _get_task(db, task_id)
+    if task.status == "running":
+        raise ApiError("任务正在处理中，请完成后再修正", code="TASK_CONFLICT", status_code=409)
+
+    cleaned: dict[str, dict[str, str]] = {}
+    for record_id, value in body.corrections.items():
+        title = value.title.strip()
+        article_type = value.article_type.strip()
+        if article_type and article_type not in {"图文", "视频"}:
+            raise ApiError("作品类型只能填写图文或视频", code="UNPROCESSABLE", status_code=422)
+        if not title or not article_type:
+            raise ApiError("请同时填写作品标题和作品类型", code="UNPROCESSABLE", status_code=422)
+        cleaned[str(record_id)] = {"title": title, "article_type": article_type}
+    if not cleaned:
+        raise ApiError("请先填写需要补充的作品信息", code="UNPROCESSABLE", status_code=422)
+
+    stored = loads(task.corrections_json, {})
+    # 兼容旧版本直接保存 {Excel行号: 媒体名} 的结构。
+    if "media_name" not in stored and "publication" not in stored:
+        stored = {"media_name": stored, "publication": {}}
+    stored.setdefault("media_name", {})
+    stored.setdefault("publication", {}).update(cleaned)
+    task.corrections_json = dumps(stored)
+
+    # 同一业务批次重新处理，旧结果立即退出统计口径，避免重复入账。
+    task.run_id = new_id("run")
+    task.status = "running"
+    task.error = None
+    task.issues_json = dumps([])
+    task.quote_summary_json = None
+    task.files_json = None
+    task.quote_file_path = None
+    task.payment_file_path = None
+    task.progress_json = dumps({"completed_nodes": [], "total_nodes": 7, "current_node": "node_00"})
     touch(task)
     db.commit()
     background_tasks.add_task(execute_workflow, task_id)

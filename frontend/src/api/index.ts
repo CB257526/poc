@@ -77,6 +77,16 @@ export const api = {
     });
   },
 
+  async submitPublicationCorrections(
+    taskId: string,
+    corrections: Record<string, { title: string; article_type: string }>,
+  ): Promise<{ task_id: string; status: string }> {
+    return request(`/api/v1/tasks/${taskId}/publication-corrections`, {
+      method: "POST",
+      body: JSON.stringify({ corrections }),
+    });
+  },
+
   async runTask(taskId: string): Promise<{ task_id: string; status: string }> {
     return request(`/api/v1/tasks/${taskId}/run`, { method: "POST" });
   },

@@ -50,6 +50,14 @@ def execute_workflow(task_id: str) -> None:
 
             corrections = json.loads(task.corrections_json)
 
+        # 兼容旧版本直接保存的媒体名称修正结构。
+        if "media_name" in corrections or "publication" in corrections:
+            media_name_corrections = corrections.get("media_name", {})
+            publication_corrections = corrections.get("publication", {})
+        else:
+            media_name_corrections = corrections
+            publication_corrections = {}
+
         def on_progress(context) -> None:
             inner = _session()
             try:
@@ -75,7 +83,10 @@ def execute_workflow(task_id: str) -> None:
         context = run_workflow(
             input_file=task.input_file_path,
             table_dir=str(default_table_dir()),
-            config={"media_name_corrections": corrections},
+            config={
+                "media_name_corrections": media_name_corrections,
+                "publication_corrections": publication_corrections,
+            },
             run_id=task.run_id,
             on_progress=on_progress,
         )

@@ -248,7 +248,7 @@ export function ProcessingPage() {
 
       {task?.status === "failed" ? (
         <div className="alert error">
-          后端处理失败：{task.error || "请查看下方问题列表"}
+          本次处理未完成，请根据下方提示修正数据后重新处理；仍无法处理时请联系技术人员。
         </div>
       ) : null}
 
