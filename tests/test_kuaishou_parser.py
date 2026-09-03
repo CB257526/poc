@@ -85,3 +85,5 @@ def test_kuaishou_context_is_mobile():
     assert "iPhone" in opts["user_agent"]
     assert opts["locale"] == "zh-CN"
     assert "default_browser_type" not in opts
+    # 快手分享页是 SSR，禁 JS 既拿内嵌 caption 又不触发滑块
+    assert opts["java_script_enabled"] is False

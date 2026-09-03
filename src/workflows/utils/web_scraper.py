@@ -155,12 +155,18 @@ def resolve_channel_candidates(
 
 
 def kuaishou_context_options(playwright) -> Dict[str, Any]:
-    """快手用 iPhone 设备描述，避免 PC 无头触发滑块验证。"""
+    """快手用 iPhone 设备描述 + 禁用 JS。
+
+    m.gifshow.com/fw/photo 是 SSR 分享页：标题/日期/类型都内嵌在初始 HTML 里，
+    不需要执行 JS。反爬滑块是 JS 水合后才触发的（云服务器 headless 稳定命中），
+    禁用 JS 既拿到 SSR 内容、又不会落到 captcha.zt.kuaishou.com。
+    """
     device = playwright.devices.get(_KUAISHOU_DEVICE) or playwright.devices["iPhone 12"]
     options = dict(device)
     options.pop("default_browser_type", None)
     options["locale"] = "zh-CN"
     options["timezone_id"] = "Asia/Shanghai"
+    options["java_script_enabled"] = False
     return options
 
 
