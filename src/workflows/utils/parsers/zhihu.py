@@ -1,5 +1,6 @@
 """知乎解析器"""
 
+import asyncio
 import re
 from typing import Dict, Any
 from playwright.async_api import Page
@@ -28,6 +29,10 @@ class ZhihuParser(BaseParser):
 
         # 文章类型：判断是视频还是图文
         article_type = await self._determine_article_type(page, url)
+
+        # 知乎未登录时会在正文中间弹「扫码下载 App / 登录」Modal，
+        # 挡在截图正中央。移除后再截，得到干净的正文截图。
+        await self._hide_login_modal(page)
 
         # 截图
         screenshot_path = await self._take_screenshot(page, url)
@@ -139,4 +144,36 @@ class ZhihuParser(BaseParser):
         if "/zvideo/" in url:
             return "视频"
         return "图文"
+
+    async def _hide_login_modal(self, page: Page) -> None:
+        """移除知乎登录引导 Modal（未登录时弹在正文正中间）。
+
+        DOM：全屏遮罩 `.Modal-wrapper`（fixed）包一层 `.Modal` 卡片，
+        内含登录表单 `.SignFlow` 或「扫码下载知乎 App」文案、关闭按钮
+        `.Modal-closeButton`。直接 remove 比点关闭按钮稳：不依赖点击
+        动画，也避免弹窗晚于截图前才挂载。
+        """
+        try:
+            removed = await page.evaluate(
+                """() => {
+                    const wrappers = [...document.querySelectorAll('.Modal-wrapper')];
+                    let n = 0;
+                    for (const w of wrappers) {
+                        const text = w.innerText || '';
+                        const isLogin = w.querySelector('.SignFlow, .Login, input[type="password"]')
+                            || /登录|扫码|下载知乎/.test(text);
+                        if (isLogin) {
+                            w.remove();
+                            n++;
+                        }
+                    }
+                    return n;
+                }"""
+            )
+            if removed:
+                # 等 React 把遮罩/滚动锁清理掉，避免残留半透明层挡住截图
+                await asyncio.sleep(0.5)
+                logger.info("zhihu_login_modal_hidden", removed=removed)
+        except Exception as e:
+            logger.warning("zhihu_login_modal_hide_failed", error=str(e))
 
