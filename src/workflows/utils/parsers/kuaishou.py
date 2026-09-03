@@ -1,7 +1,7 @@
 """快手平台解析器"""
 
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, Any
 
@@ -12,17 +12,36 @@ from workflows.services import get_logger
 
 logger = get_logger()
 
+_PLACEHOLDER_TITLES = {
+    "快手",
+    "kuaishou",
+    "短视频",
+    "短视频-快手",
+    "打开快手",
+    "打开快手，看更多精彩视频",
+}
+
+_CAPTCHA_HINTS = (
+    "captcha.zt.kuaishou.com",
+    "ANTICRAWL",
+    "请完成安全验证",
+)
+
+
 class KuaishouParser(BaseParser):
-    """快手短链 / 作品页解析器"""
+    """快手短链 / 作品页解析器。
+
+    PC Web（www.kuaishou.com/short-video）对无头 Chrome 会弹滑块，
+    抓取侧改用 iPhone 指纹，落到 m.gifshow.com/fw/photo 分享页。
+    """
 
     def __init__(self):
         super().__init__("快手")
 
     async def parse(self, page: Page, url: str) -> Dict[str, Any]:
-        await self.wait_for_content(page)
         try:
             await page.wait_for_selector(
-                "span.text.txt, span.topic.txt, .video-info-title, .photo-time, video",
+                ".desc, span.text.txt, span.topic.txt, .video-info-title, .photo-time, video",
                 timeout=8000,
                 state="visible",
             )
@@ -35,7 +54,11 @@ class KuaishouParser(BaseParser):
         title = await self._extract_title(page, html)
         publish_date = await self._extract_date(page, html)
         article_type = await self._detect_type(page, html)
-        screenshot_path = await self._take_screenshot(page, url)
+        if self._is_captcha_page(html, page.url):
+            logger.warning("kuaishou_captcha_page", url=url, href=page.url)
+            screenshot_path = ""
+        else:
+            screenshot_path = await self._take_screenshot(page, url)
 
         return {
             "title": title or "未能提取标题",
@@ -51,33 +74,44 @@ class KuaishouParser(BaseParser):
 
         try:
             texts = await page.eval_on_selector_all(
-                "span.text.txt, span.topic.txt",
+                ".desc, span.text.txt, span.topic.txt",
                 "els => els.map(el => (el.textContent || '').trim()).filter(Boolean)",
             )
-            joined = "".join(texts).strip()
-            if joined:
-                return joined[:200]
+            for text in texts:
+                cleaned = self._clean_title(text)
+                if cleaned:
+                    return cleaned[:200]
         except Exception:
             pass
 
         for selector in [".video-info-title", ".caption", "h1"]:
             try:
                 text = await page.text_content(selector, timeout=2000)
-                if text and text.strip() and text.strip() not in {"快手", "Kuaishou"}:
-                    return text.strip()[:200]
+                cleaned = self._clean_title(text or "")
+                if cleaned:
+                    return cleaned[:200]
             except Exception:
                 continue
 
         try:
-            doc_title = await page.title()
-            if doc_title:
-                cleaned = re.sub(r"[-_]?快手\s*$", "", doc_title).strip()
-                if cleaned and cleaned not in {"快手", "Kuaishou"}:
-                    return cleaned[:200]
+            cleaned = self._clean_title(await page.title())
+            if cleaned:
+                return cleaned[:200]
         except Exception:
             pass
 
         return ""
+
+    @staticmethod
+    def _clean_title(text: str) -> str:
+        if not text:
+            return ""
+        cleaned = re.sub(r"[-_]?快手\s*$", "", text).strip()
+        if not cleaned or cleaned.lower() in _PLACEHOLDER_TITLES:
+            return ""
+        if cleaned.startswith("打开快手"):
+            return ""
+        return cleaned
 
     @staticmethod
     def _caption_from_html(html: str) -> str:
@@ -98,7 +132,7 @@ class KuaishouParser(BaseParser):
 
     async def _extract_date(self, page: Page, html: str) -> str:
         match = re.search(
-            r'"photo"\s*:\s*\{[^{}]{0,400}"timestamp"\s*:\s*(\d{10,13})',
+            r'"photo"\s*:\s*\{[^{}]{0,800}"timestamp"\s*:\s*(\d{10,13})',
             html,
         )
         if match:
@@ -106,11 +140,15 @@ class KuaishouParser(BaseParser):
             if parsed:
                 return parsed
 
+        today = datetime.now().strftime("%Y-%m-%d")
+        candidates = []
         for ts in re.findall(r'"timestamp"\s*:\s*(\d{10,13})', html):
             parsed = self._from_epoch(ts)
             # 页面里还有分享打开时间，只取合理的作品发布时间
-            if parsed and parsed <= datetime.now().strftime("%Y-%m-%d"):
-                return parsed
+            if parsed and parsed <= today:
+                candidates.append(parsed)
+        if candidates:
+            return min(candidates)
 
         for selector in [".photo-time", "[class*='photo-time']", "time"]:
             try:
@@ -149,7 +187,6 @@ class KuaishouParser(BaseParser):
         for pattern, days_fn in mapping:
             match = re.search(pattern, text)
             if match:
-                from datetime import timedelta
                 delta = timedelta(days=days_fn(int(match.group(1))))
                 return (now - delta).strftime("%Y-%m-%d")
 
@@ -184,12 +221,19 @@ class KuaishouParser(BaseParser):
             return "视频"
         if re.search(r'"photoType"\s*:\s*"[^"]*VIDEO', html, re.I):
             return "视频"
+        if "/short-video/" in (page.url or "") or "/fw/photo/" in (page.url or ""):
+            return "视频"
         try:
             if await page.query_selector("video"):
                 return "视频"
         except Exception:
             pass
         return "图文"
+
+    @staticmethod
+    def _is_captcha_page(html: str, href: str = "") -> bool:
+        hay = f"{html or ''} {href or ''}"
+        return any(hint in hay for hint in _CAPTCHA_HINTS)
 
     async def _save_html_sample(self, page: Page) -> None:
         filepath = Path("web_data") / "快手.html"

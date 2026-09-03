@@ -279,6 +279,8 @@ def test_node_01_platform_identification():
     assert node._identify_platform("https://weibo.com/123") == "微博"
     assert node._identify_platform("https://mp.weixin.qq.com/s/abc") == "微信公众号"
     assert node._identify_platform("https://www.bilibili.com/video/BV123") == "B站"
+    assert node._identify_platform("https://www.kuaishou.com/f/X-8aiPXU2RsvCJL9") == "快手"
+    assert node._identify_platform("https://m.gifshow.com/fw/photo/3xbi4c2dn9bnsmm") == "快手"
     assert node._identify_platform("https://unknown-domain.com/page") == "unknown"
 
 

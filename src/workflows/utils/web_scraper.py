@@ -80,6 +80,11 @@ _MISSING_PAGE_MARKERS = (
 # 从同一 context 跟过去就能拿到正文。本地（住宅 IP）可绕过，服务器必须走这条。
 _ZHIHU_LINK_BASE = "https://link.zhihu.com/?target="
 
+# 快手 PC Web（www.kuaishou.com/short-video）对无头 Chrome 会弹 ANTICRAWL 滑块，
+# 正文 caption 根本不水合。同一条短链用 iPhone 指纹会跳到 m.gifshow.com/fw/photo，
+# 无头也能拿到作品描述。桌面有头 Chrome 也能过，但服务器默认无头，所以快手单独走移动端。
+_KUAISHOU_DEVICE = "iPhone 13"
+
 
 def _env_flag(name: str, env: Optional[Mapping[str, str]] = None) -> bool:
     raw = (env if env is not None else os.environ).get(name, "").strip().lower()
@@ -147,6 +152,16 @@ def resolve_channel_candidates(
     if requested in _SYSTEM_CHANNELS:
         return [requested, None]
     return ["chrome", None]
+
+
+def kuaishou_context_options(playwright) -> Dict[str, Any]:
+    """快手用 iPhone 设备描述，避免 PC 无头触发滑块验证。"""
+    device = playwright.devices.get(_KUAISHOU_DEVICE) or playwright.devices["iPhone 12"]
+    options = dict(device)
+    options.pop("default_browser_type", None)
+    options["locale"] = "zh-CN"
+    options["timezone_id"] = "Asia/Shanghai"
+    return options
 
 
 def resolve_headless(
@@ -420,6 +435,7 @@ async def scrape_publications(records: List[Dict[str, Any]]) -> List[Dict[str, A
     新策略（2026-08）：
     - 优先用系统 Google Chrome 无头（channel=chrome）过知乎反爬
     - 没有 Chrome 时回退 Playwright 自带 Chromium（知乎仍需 headful / Xvfb）
+    - 快手不用 PC Web：无头会弹滑块；改 iPhone 指纹走 m.gifshow.com 分享页
     - 环境变量 WEB_SCRAPER_BROWSER 可强制 bundled / chrome
     - 环境变量 WEB_SCRAPER_HEADLESS=1 强制无头（测试用）
     - WEB_SCRAPER_NAV_TIMEOUT 导航超时毫秒，默认 15000
@@ -450,6 +466,14 @@ async def scrape_publications(records: List[Dict[str, Any]]) -> List[Dict[str, A
 
             await context.add_init_script(STEALTH_INIT_SCRIPT)
 
+            kuaishou_context = None
+            has_kuaishou = any(r.get("primary_platform") == "快手" for r in records)
+            if has_kuaishou:
+                kuaishou_context = await browser.new_context(
+                    **kuaishou_context_options(playwright)
+                )
+                await kuaishou_context.add_init_script(STEALTH_INIT_SCRIPT)
+
             try:
                 concurrency = _env_int("WEB_SCRAPER_CONCURRENCY", 2)
                 nav_timeout_ms = _env_int("WEB_SCRAPER_NAV_TIMEOUT", 15000)
@@ -461,7 +485,12 @@ async def scrape_publications(records: List[Dict[str, Any]]) -> List[Dict[str, A
                 zhihu_semaphore = asyncio.Semaphore(1)
 
                 async def fetch_and_parse(record, url: str, platform: str) -> None:
-                    page = await context.new_page()
+                    page_context = (
+                        kuaishou_context
+                        if platform == "快手" and kuaishou_context is not None
+                        else context
+                    )
+                    page = await page_context.new_page()
                     page.set_default_timeout(nav_timeout_ms)
                     try:
                         await asyncio.sleep(random.uniform(0.2, 0.6))
@@ -529,11 +558,18 @@ async def scrape_publications(records: List[Dict[str, Any]]) -> List[Dict[str, A
                             return
 
                         try:
-                            await page.wait_for_selector(
-                                "h1, .QuestionHeader-title, .Post-Title, .ContentItem-title",
-                                timeout=8000,
-                                state="visible",
-                            )
+                            if platform == "快手":
+                                await page.wait_for_selector(
+                                    ".desc, span.text.txt, .video-info-title, video",
+                                    timeout=8000,
+                                    state="visible",
+                                )
+                            else:
+                                await page.wait_for_selector(
+                                    "h1, .QuestionHeader-title, .Post-Title, .ContentItem-title",
+                                    timeout=8000,
+                                    state="visible",
+                                )
                         except Exception:
                             await asyncio.sleep(0.8)
 
@@ -601,6 +637,8 @@ async def scrape_publications(records: List[Dict[str, Any]]) -> List[Dict[str, A
                 await asyncio.gather(*[scrape_one_record(r) for r in records])
 
             finally:
+                if kuaishou_context is not None:
+                    await kuaishou_context.close()
                 await context.close()
 
         finally:

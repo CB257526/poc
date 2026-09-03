@@ -33,6 +33,7 @@ PLATFORM_DOMAINS = {
     "autohome.com.cn": "汽车之家",
     "kuaishou.com": "快手",
     "chenzhongtech.com": "快手",  # 快手短链跳转后的域名
+    "gifshow.com": "快手",  # 移动端分享页 m.gifshow.com/fw/photo
 }
 
 
