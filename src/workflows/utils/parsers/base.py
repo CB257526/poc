@@ -51,6 +51,7 @@ class BaseParser(ABC):
         filepath = Path("screenshots") / f"{self.platform_name}_{url_hash}.png"
         filepath.parent.mkdir(parents=True, exist_ok=True)
         try:
+            await self._wait_for_visible_images(page)
             await asyncio.wait_for(
                 page.screenshot(path=str(filepath), full_page=False, type="png"),
                 timeout=8,
@@ -58,3 +59,38 @@ class BaseParser(ABC):
         except Exception:
             return ""
         return str(filepath)
+
+    async def _wait_for_visible_images(self, page: Page) -> None:
+        """截图前等待当前视口内图片渲染，超时后正常降级截图。
+
+        页面正文出现后，头像和正文配图仍可能通过懒加载异步请求。先给页面
+        两秒缓冲，再检测可见 ``img`` 是否已有有效像素；最多额外等待四秒，
+        避免失败的图片请求拖住整批任务。
+        """
+        try:
+            await asyncio.sleep(2)
+            await page.evaluate(
+                """() => {
+                    for (const img of document.querySelectorAll('img')) {
+                        const rect = img.getBoundingClientRect();
+                        const visible = rect.bottom > 0 && rect.top < window.innerHeight
+                            && rect.right > 0 && rect.left < window.innerWidth;
+                        if (visible) img.loading = 'eager';
+                    }
+                }"""
+            )
+            await page.wait_for_function(
+                """() => [...document.querySelectorAll('img')]
+                    .filter((img) => {
+                        const rect = img.getBoundingClientRect();
+                        return rect.bottom > 0 && rect.top < window.innerHeight
+                            && rect.right > 0 && rect.left < window.innerWidth;
+                    })
+                    .every((img) => img.complete && img.naturalWidth > 0)""",
+                timeout=4000,
+            )
+            # 图片解码完成后给浏览器一个短暂绘制窗口。
+            await asyncio.sleep(0.3)
+        except Exception:
+            # 图片可能被登录、CDN 或防盗链限制；不因此中断截图和后续流程。
+            pass
